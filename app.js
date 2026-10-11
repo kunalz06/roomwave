@@ -6,7 +6,7 @@ import {
 const $ = (id) => document.getElementById(id);
 const LIMIT = 8;
 const state = {
-  peer: null, connecting: false, code: '', name: '', hosting: false, joined: false,
+  peer: null, roomSocket: null, connecting: false, code: '', name: '', hosting: false, joined: false,
   members: new Map(), connections: new Map(),
   screenStream: null, screenCalls: new Map(), remoteScreens: new Map(),
   audioContext: null, audioDestination: null, audioSource: null,
@@ -45,14 +45,13 @@ function memberName(id) {
 function peerHost() { return hostPeerId(state.code); }
 function myId() { return state.peer?.id; }
 function isHostId(id) { return id === peerHost(); }
-function activeConnections() {
-  return Array.from(state.connections.values()).filter(c => c.open);
+function otherMembers() {
+  return [...state.members.keys()].filter(id => id !== myId());
 }
-function send(conn, data) {
-  if (!conn?.open) return;
-  try { conn.send(data); } catch { /* A disconnect will be handled by PeerJS. */ }
+function broadcast(data) {
+  if (state.roomSocket?.readyState !== WebSocket.OPEN) return false;
+  try { state.roomSocket.send(JSON.stringify(data)); return true; } catch { return false; }
 }
-function broadcast(data) { for (const conn of activeConnections()) send(conn, data); }
 function initIdentity() {
   state.name = cleanName($('displayName').value);
   $('displayName').value = state.name;
@@ -71,6 +70,9 @@ function resetRoom() {
   state.musicCalls.clear();
   try { state.incomingMusicCall?.close(); } catch {}
   state.incomingMusicCall = null;
+  const previousSocket = state.roomSocket;
+  state.roomSocket = null;
+  try { previousSocket?.close(1000, 'Left room'); } catch {}
   for (const conn of state.connections.values()) { try { conn.close(); } catch {} }
   state.connections.clear();
   const oldPeer = state.peer;
@@ -159,23 +161,11 @@ async function enterRoom(isHost, code) {
   }, 20000);
   peer.on('open', (id) => {
     if (state.peer !== peer) return;
-    clearTimeout(state.setupTimeout);
-    state.setupTimeout = null;
     state.members.delete('__pending__');
     state.members.set(id, state.name);
-    if (state.hosting) {
-      displayRoom();
-    } else {
-      setLobbyBusy(true, 'Connecting to the room host…');
-      connectTo(peerHost(), true);
-      state.joinTimeout = setTimeout(() => {
-        if (!state.joined && state.peer === peer) {
-          connectionFailed('Could not join that room. Check the code and that the host is still online.');
-        }
-      }, 20000);
-    }
+    setLobbyBusy(true, 'Joining the room server…');
+    openRoomSocket(attempt, endpoint);
   });
-  peer.on('connection', registerConnection);
   peer.on('call', acceptCall);
   peer.on('disconnected', () => {
     if (state.peer !== peer) return;
@@ -195,7 +185,7 @@ async function enterRoom(isHost, code) {
     if (type === 'unavailable-id') {
       connectionFailed('That room code is already in use. Create another room.');
     } else if (type === 'peer-unavailable' && !state.joined) {
-      connectionFailed('Room not found. Ask the host to create it first.');
+      connectionFailed('A participant connection was unavailable. Please retry.');
     } else if (['network', 'server-error', 'socket-error', 'socket-closed', 'browser-incompatible', 'invalid-id', 'invalid-key', 'ssl-unavailable'].includes(type)) {
       if (!state.joined) connectionFailed('Room connection failed. Check your network and try again.');
       else notify('Connection issue. If participants disappear, leave and rejoin the room.');
@@ -223,92 +213,89 @@ function displayRoom() {
   renderScreens();
   renderMusic();
 }
-function connectTo(id, mustConnect = false) {
-  if (!state.peer || !isValidPeerId(id) || id === myId()) return;
-  if (!mustConnect && myId() > id) return;
-  const existing = state.connections.get(id);
-  if (existing && !existing.disconnected) return;
-  try { registerConnection(state.peer.connect(id, { reliable: true })); }
-  catch { notify('Could not connect to a participant.'); }
+function openRoomSocket(attempt, endpoint) {
+  if (attempt !== state.connectAttempt || !state.peer?.id) return;
+  const url = new URL(endpoint);
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  url.pathname = '/rooms';
+  let socket;
+  try { socket = new WebSocket(url.href); }
+  catch { connectionFailed('Cannot connect to the room service. Please retry.'); return; }
+  state.roomSocket = socket;
+  state.setupTimeout = setTimeout(() => {
+    if (state.roomSocket === socket && !state.joined) connectionFailed('Room server did not respond. Try again.');
+  }, 25000);
+  socket.addEventListener('open', () => {
+    if (state.roomSocket !== socket || attempt !== state.connectAttempt) return;
+    socket.send(JSON.stringify({type:state.hosting?'create':'join',code:state.code,peerId:myId(),name:state.name}));
+    setLobbyBusy(true, state.hosting?'Creating your room…':'Joining the host’s room…');
+  });
+  socket.addEventListener('message', event => {
+    if (state.roomSocket !== socket) return;
+    let data;
+    try { data = JSON.parse(event.data); } catch { return; }
+    onRoomMessage(data);
+  });
+  socket.addEventListener('close', () => {
+    if (state.roomSocket === socket) connectionFailed('Room server disconnected. Reopen the room to reconnect.');
+  });
+  socket.addEventListener('error', () => {
+    if (state.roomSocket === socket && !state.joined) connectionFailed('Room service connection failed. Check your network and retry.');
+  });
 }
-function registerConnection(conn) {
-  if (!state.peer || !isValidPeerId(conn.peer) || conn.peer === myId()) { conn.close(); return; }
-  // For simultaneous mesh dials, keep the outgoing connection from the lower peer ID.
-  const existing = state.connections.get(conn.peer);
-  if (existing && existing !== conn) {
-    const preferOutgoing = myId() < conn.peer;
-    const isNewOutgoing = conn.type === 'data' && conn.options?.metadata?.outgoing === true;
-    // Already have an active channel; do not risk closing the only live channel.
-    if (existing.open) { conn.close(); return; }
-    if (preferOutgoing && !isNewOutgoing && !isHostId(conn.peer)) { conn.close(); return; }
-    try { existing.close(); } catch {}
+function applyRoster(members) {
+  if (!Array.isArray(members)) return;
+  const valid = members.slice(0,LIMIT).filter(m=>m && isValidPeerId(m.id) && typeof m.name==='string');
+  if (!valid.some(m=>m.id===myId()) || !valid.some(m=>m.id===peerHost())) return;
+  const next = new Map(valid.map(m=>[m.id,cleanName(m.name)]));
+  const removed = [...state.members.keys()].filter(id=>!next.has(id));
+  const added = [...next.keys()].filter(id=>!state.members.has(id) && id!==myId());
+  state.members = next;
+  for (const id of removed) {
+    try { state.screenCalls.get(id)?.close(); } catch {}
+    state.screenCalls.delete(id);
+    try { state.musicCalls.get(id)?.close(); } catch {}
+    state.musicCalls.delete(id);
+    if (state.remoteScreens.has(id)) state.remoteScreens.delete(id);
   }
-  state.connections.set(conn.peer, conn);
-  conn.on('open', () => {
-    if (state.connections.get(conn.peer) !== conn) return;
-    send(conn, { type:'hello', name:state.name });
-    if (state.screenStream) sendScreenTo(conn.peer);
-    if (state.hosting && state.audioDestination) sendMusicTo(conn.peer);
-  });
-  conn.on('data', data => handleMessage(conn, data));
-  conn.on('close', () => {
-    if (state.connections.get(conn.peer) !== conn) return;
-    state.connections.delete(conn.peer);
-    if (state.hosting) {
-      state.members.delete(conn.peer);
-      sendRoster();
-    } else if (isHostId(conn.peer)) {
-      notify('The host left the room. Returning to the lobby.');
-      resetRoom();
-      return;
-    } else { state.members.delete(conn.peer); }
-    renderPeople();
-  });
-  conn.on('error', () => { /* PeerJS also emits close; avoid duplicate messages. */ });
+  renderPeople();
+  renderScreens();
+  // Server roster is authoritative; media is still direct WebRTC where the network supports it.
+  for (const id of added) {
+    if (state.screenStream) sendScreenTo(id);
+    if (state.hosting && state.audioDestination) sendMusicTo(id);
+  }
+  if (state.hosting && state.track.title && added.length) broadcast({type:'music',track:currentTrack()});
 }
-function sendRoster() {
-  if (!state.hosting) return;
-  const members = Array.from(state.members.entries()).filter(([id]) => id === myId() || state.connections.get(id)?.open)
-    .slice(0,LIMIT).map(([id,name]) => ({ id, name }));
-  broadcast({ type:'roster', members });
-}
-function handleMessage(conn, data) {
-  if (!data || typeof data !== 'object' || typeof data.type !== 'string') return;
-  const fromHost = isHostId(conn.peer);
-  if (data.type === 'hello') {
-    if (state.hosting && !state.members.has(conn.peer) && state.members.size >= LIMIT) {
-      send(conn,{type:'room-full'}); setTimeout(() => conn.close(), 100); return;
-    }
-    const name = cleanName(data.name);
-    state.members.set(conn.peer, name);
-    renderPeople();
-    if (state.hosting) {
-      sendRoster();
-      send(conn, { type:'music', track:currentTrack() });
-    }
-  } else if (data.type === 'roster' && fromHost && !state.hosting) {
-    if (!Array.isArray(data.members)) return;
-    const clean = data.members.slice(0,LIMIT).filter(m => m && isValidPeerId(m.id) && typeof m.name === 'string');
-    if (!clean.some(m => m.id === myId()) || !clean.some(m => m.id === peerHost())) return;
-    for (const m of clean) state.members.set(m.id, cleanName(m.name));
-    for (const id of [...state.members.keys()]) if (id !== myId() && !clean.some(m => m.id === id)) state.members.delete(id);
+function onRoomMessage(data) {
+  if (!data || typeof data !== 'object') return;
+  if (data.type==='created' || data.type==='joined') {
+    if (state.joined || data.code!==state.code) return;
+    applyRoster(data.members);
+    clearTimeout(state.setupTimeout);
+    state.setupTimeout = null;
     displayRoom();
-    for (const member of clean) if (member.id !== myId() && member.id !== peerHost()) connectTo(member.id);
-    renderPeople();
-  } else if (data.type === 'room-full' && fromHost && !state.hosting) {
-    notify('That room is full (maximum 8 people).'); resetRoom();
-  } else if (data.type === 'chat' && state.joined) {
-    if (typeof data.body === 'string') addChat(conn.peer, cleanChat(data.body), Number(data.ts));
-  } else if (data.type === 'music' && fromHost && !state.hosting) {
-    if (data.track && typeof data.track === 'object') {
-      const t = data.track;
-      state.track = {
-        title: String(t.title ?? '').slice(0,120),
-        duration: validNumber(t.duration), position: validNumber(t.position),
-        playing: Boolean(t.playing), stamped:Date.now()
-      };
-      renderMusic();
-    }
+  } else if (data.type==='roster') {
+    applyRoster(data.members);
+  } else if (data.type==='chat' && state.joined) {
+    if (state.members.has(data.from) && typeof data.body==='string') addChat(data.from,cleanChat(data.body),Number(data.ts));
+  } else if (data.type==='music' && !state.hosting) {
+    if (!data.track || typeof data.track!=='object') return;
+    const t=data.track;
+    state.track={title:String(t.title??'').slice(0,120),duration:validNumber(t.duration),
+      position:validNumber(t.position),playing:Boolean(t.playing),stamped:Date.now()};
+    renderMusic();
+  } else if (data.type==='room-closed') {
+    connectionFailed('The host left. This room is now closed.');
+  } else if (data.type==='error') {
+    const messages = {
+      'room-not-found':'Room not found. Ask the host for a new invite link.',
+      'room-full':'That room is full (maximum 8 people).',
+      'room-exists':'That room code is already taken. Create another room.',
+      'duplicate-peer':'You are already connected from another tab. Close it and retry.',
+      'invalid-room':'Invalid room code. Try another invite.',
+    };
+    connectionFailed(messages[data.reason] || 'Could not join that room. Please retry.');
   }
 }
 function validNumber(n) { return typeof n === 'number' && Number.isFinite(n) && n >= 0 ? Math.min(n,86400) : 0; }
@@ -329,6 +316,7 @@ function renderPeople() {
   $('peopleCount').textContent = `${ordered.length} / ${LIMIT}`;
 }
 function acceptCall(call) {
+  if (!state.members.has(call.peer)) { call.close(); return; }
   const kind = call.metadata?.kind;
   if (kind !== 'screen' && kind !== 'music') { call.close(); return; }
   if (kind === 'music' && (state.hosting || !isHostId(call.peer))) { call.close(); return; }
@@ -358,7 +346,7 @@ function acceptCall(call) {
   }
 }
 function sendScreenTo(id) {
-  if (!state.peer || !state.screenStream || !state.connections.get(id)?.open || state.screenCalls.has(id)) return;
+  if (!state.peer || !state.screenStream || !state.members.has(id) || state.screenCalls.has(id)) return;
   try {
     const call = state.peer.call(id, state.screenStream, { metadata:{kind:'screen'} });
     state.screenCalls.set(id,call);
@@ -373,7 +361,7 @@ async function shareScreen() {
     const stream = await navigator.mediaDevices.getDisplayMedia({ video:{frameRate:15}, audio:false });
     state.screenStream = stream;
     stream.getVideoTracks()[0]?.addEventListener('ended',stopSharing,{once:true});
-    for (const conn of activeConnections()) sendScreenTo(conn.peer);
+    for (const id of otherMembers()) sendScreenTo(id);
     renderScreens();
   } catch (error) {
     if (error?.name !== 'NotAllowedError') notify('Screen capture failed. Try sharing a different tab or window.');
@@ -416,7 +404,7 @@ function audioSetup() {
   state.audioSource.connect(state.audioContext.destination);
 }
 function sendMusicTo(id) {
-  if (!state.hosting || !state.peer || !state.audioDestination || !state.connections.get(id)?.open || state.musicCalls.has(id)) return;
+  if (!state.hosting || !state.peer || !state.audioDestination || !state.members.has(id) || state.musicCalls.has(id)) return;
   try {
     const call=state.peer.call(id,state.audioDestination.stream,{metadata:{kind:'music'}});
     state.musicCalls.set(id,call);
@@ -458,7 +446,7 @@ async function chooseAudio(file) {
   $('musicPlayer').load();
   state.track.title=file.name.replace(/\.[^.]+$/,'').slice(0,120);
   state.track.duration=0;
-  for (const conn of activeConnections()) sendMusicTo(conn.peer);
+  for (const id of otherMembers()) sendMusicTo(id);
   sendMusic();
   notify(`“${state.track.title}” is ready to play.`);
 }
