@@ -2,6 +2,7 @@ import {
   normalizeRoomCode, isValidRoomCode, makeRoomCode, cleanName, cleanChat,
   hostPeerId, isValidPeerId, formatTime, peerOptionsFromEndpoint
 } from './room-utils.mjs';
+import { displayAudioOptions, hasLiveAudio } from './media-utils.mjs';
 
 const $ = (id) => document.getElementById(id);
 const LIMIT = 8;
@@ -9,6 +10,8 @@ const state = {
   peer: null, roomSocket: null, connecting: false, code: '', name: '', hosting: false, joined: false,
   members: new Map(), connections: new Map(),
   screenStream: null, screenCalls: new Map(), remoteScreens: new Map(),
+  deviceAudioCapture: null, deviceAudioStream: null, deviceAudioFromScreen: false, deviceAudioSource: '',
+  deviceAudioCalls: new Map(), incomingDeviceAudioCalls: new Map(), deviceAudioPlayers: new Map(),
   audioContext: null, audioDestination: null, audioSource: null,
   musicCalls: new Map(), incomingMusicCall: null, trackObjectURL: null,
   track: { title: '', duration: 0, position: 0, playing: false, stamped: 0 },
@@ -66,6 +69,11 @@ function resetRoom() {
   clearTimeout(state.joinTimeout);
   state.joinTimeout = null;
   stopSharing();
+  stopDeviceAudio();
+  for (const call of state.incomingDeviceAudioCalls.values()) { try { call.close(); } catch {} }
+  state.incomingDeviceAudioCalls.clear();
+  for (const audio of state.deviceAudioPlayers.values()) { audio.pause(); audio.srcObject = null; audio.remove(); }
+  state.deviceAudioPlayers.clear();
   for (const call of state.musicCalls.values()) { try { call.close(); } catch {} }
   state.musicCalls.clear();
   try { state.incomingMusicCall?.close(); } catch {}
@@ -212,6 +220,7 @@ function displayRoom() {
   renderPeople();
   renderScreens();
   renderMusic();
+  renderDeviceAudio();
 }
 function openRoomSocket(attempt, endpoint) {
   if (attempt !== state.connectAttempt || !state.peer?.id) return;
@@ -256,6 +265,10 @@ function applyRoster(members) {
     state.screenCalls.delete(id);
     try { state.musicCalls.get(id)?.close(); } catch {}
     state.musicCalls.delete(id);
+    try { state.deviceAudioCalls.get(id)?.close(); } catch {}
+    state.deviceAudioCalls.delete(id);
+    try { state.incomingDeviceAudioCalls.get(id)?.close(); } catch {}
+    clearIncomingDeviceAudio(id);
     if (state.remoteScreens.has(id)) state.remoteScreens.delete(id);
   }
   renderPeople();
@@ -263,6 +276,7 @@ function applyRoster(members) {
   // Server roster is authoritative; media is still direct WebRTC where the network supports it.
   for (const id of added) {
     if (state.screenStream) sendScreenTo(id);
+    if (state.deviceAudioStream) sendDeviceAudioTo(id);
     if (state.hosting && state.audioDestination) sendMusicTo(id);
   }
   if (state.hosting && state.track.title && added.length) broadcast({type:'music',track:currentTrack()});
@@ -318,7 +332,7 @@ function renderPeople() {
 function acceptCall(call) {
   if (!state.members.has(call.peer)) { call.close(); return; }
   const kind = call.metadata?.kind;
-  if (kind !== 'screen' && kind !== 'music') { call.close(); return; }
+  if (kind !== 'screen' && kind !== 'music' && kind !== 'device-audio') { call.close(); return; }
   if (kind === 'music' && (state.hosting || !isHostId(call.peer))) { call.close(); return; }
   try { call.answer(); } catch { call.close(); return; }
   if (kind === 'screen') {
@@ -331,6 +345,28 @@ function acceptCall(call) {
     call.on('close', () => {
       if (state.remoteScreens.get(call.peer)?.call === call) { state.remoteScreens.delete(call.peer); renderScreens(); }
     });
+  } else if (kind === 'device-audio') {
+    const previous = state.incomingDeviceAudioCalls.get(call.peer);
+    if (previous && previous !== call) { try { previous.close(); } catch {} }
+    state.incomingDeviceAudioCalls.set(call.peer, call);
+    call.on('stream', stream => {
+      if (state.incomingDeviceAudioCalls.get(call.peer) !== call) return;
+      if (!hasLiveAudio(stream)) return;
+      let audio = state.deviceAudioPlayers.get(call.peer);
+      if (!audio) {
+        audio = document.createElement('audio');
+        audio.autoplay = true; audio.playsInline = true;
+        audio.setAttribute('aria-label', `Shared audio from ${memberName(call.peer)}`);
+        $('sharedAudioOutputs').append(audio);
+        state.deviceAudioPlayers.set(call.peer, audio);
+      }
+      audio.srcObject = stream;
+      audio.volume = Number($('volume').value) / 100;
+      audio.play().catch(() => { $('enableAudio').hidden = false; });
+      renderDeviceAudio();
+    });
+    call.on('close', () => { if (state.incomingDeviceAudioCalls.get(call.peer) === call) clearIncomingDeviceAudio(call.peer); });
+    call.on('error', () => { if (state.incomingDeviceAudioCalls.get(call.peer) === call) clearIncomingDeviceAudio(call.peer); });
   } else {
     if (state.incomingMusicCall) { try { state.incomingMusicCall.close(); } catch {} }
     state.incomingMusicCall = call;
@@ -348,7 +384,9 @@ function acceptCall(call) {
 function sendScreenTo(id) {
   if (!state.peer || !state.screenStream || !state.members.has(id) || state.screenCalls.has(id)) return;
   try {
-    const call = state.peer.call(id, state.screenStream, { metadata:{kind:'screen'} });
+    // Audio is sent as a separate audio-only call so the video tile stays muted.
+    const videoOnly = new MediaStream(state.screenStream.getVideoTracks());
+    const call = state.peer.call(id, videoOnly, { metadata:{kind:'screen'} });
     state.screenCalls.set(id,call);
     call.on('close',()=>{if(state.screenCalls.get(id)===call)state.screenCalls.delete(id);});
     call.on('error',()=>{if(state.screenCalls.get(id)===call)state.screenCalls.delete(id);});
@@ -358,9 +396,19 @@ async function shareScreen() {
   if (state.screenStream) { stopSharing(); return; }
   if (!navigator.mediaDevices?.getDisplayMedia) { notify('Screen sharing requires a supported desktop browser on HTTPS.'); return; }
   try {
-    const stream = await navigator.mediaDevices.getDisplayMedia({ video:{frameRate:15}, audio:false });
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { frameRate: 15 }, audio: { suppressLocalAudioPlayback: false },
+      systemAudio: 'include', windowAudio: 'system', selfBrowserSurface: 'exclude'
+    });
+    if (!state.joined) { stream.getTracks().forEach(track => track.stop()); return; }
     state.screenStream = stream;
-    stream.getVideoTracks()[0]?.addEventListener('ended',stopSharing,{once:true});
+    stream.getVideoTracks()[0]?.addEventListener('ended', stopSharing, { once: true });
+    if (hasLiveAudio(stream) && !state.deviceAudioStream) {
+      startDeviceAudio(stream, true);
+      notify('Sharing your screen and its audio with the room.');
+    } else if (!hasLiveAudio(stream)) {
+      notify('Screen sharing started without sound. To include audio, select a tab with “Share tab audio” enabled.');
+    }
     for (const id of otherMembers()) sendScreenTo(id);
     renderScreens();
   } catch (error) {
@@ -368,9 +416,117 @@ async function shareScreen() {
   }
 }
 function stopSharing() {
+  if (state.deviceAudioFromScreen) stopDeviceAudio();
   if (state.screenStream) {for(const track of state.screenStream.getTracks())track.stop();state.screenStream=null;}
   for(const call of state.screenCalls.values()){try{call.close();}catch{}}
   state.screenCalls.clear();renderScreens();
+}
+function clearIncomingDeviceAudio(id) {
+  state.incomingDeviceAudioCalls.delete(id);
+  const audio = state.deviceAudioPlayers.get(id);
+  if (audio) { audio.pause(); audio.srcObject = null; audio.remove(); }
+  state.deviceAudioPlayers.delete(id);
+  renderDeviceAudio();
+}
+function renderDeviceAudio() {
+  const own = Boolean(state.deviceAudioStream);
+  const names = [...state.deviceAudioPlayers.keys()].map(id => memberName(id));
+  const status = $('deviceAudioStatus');
+  if (own) status.textContent = state.deviceAudioSource === 'microphone'
+    ? 'Your microphone is live for everyone in the room.'
+    : 'You are broadcasting shared audio to the room.';
+  else if (names.length) status.textContent = `Listening to ${names.join(', ')}'s shared audio.`;
+  else status.textContent = 'No device or tab audio is being shared.';
+  $('shareDeviceAudio').textContent = own ? '■ Stop sharing audio' : '♫ Share tab / device audio';
+  $('shareDeviceAudio').classList.toggle('btn-primary', !own);
+  $('shareDeviceAudio').classList.toggle('btn-outline', own);
+  $('shareMicrophone').disabled = own;
+  $('sharedAudioCount').textContent = `${names.length + Number(own)} SHARING`;
+}
+function sendDeviceAudioTo(id) {
+  if (!state.peer || !state.deviceAudioStream || !state.members.has(id) ||
+      id === myId() || state.deviceAudioCalls.has(id)) return;
+  try {
+    const call = state.peer.call(id, state.deviceAudioStream, { metadata:{kind:'device-audio'} });
+    state.deviceAudioCalls.set(id, call);
+    call.on('close', () => { if (state.deviceAudioCalls.get(id) === call) state.deviceAudioCalls.delete(id); });
+    call.on('error', () => { if (state.deviceAudioCalls.get(id) === call) state.deviceAudioCalls.delete(id); });
+  } catch { notify('Could not send shared audio to one participant.'); }
+}
+function startDeviceAudio(capture, fromScreen = false, source = 'tab') {
+  if (!hasLiveAudio(capture)) return false;
+  state.deviceAudioCapture = capture;
+  state.deviceAudioFromScreen = fromScreen;
+  state.deviceAudioSource = fromScreen ? 'screen' : source;
+  state.deviceAudioStream = new MediaStream(capture.getAudioTracks());
+  for (const track of capture.getAudioTracks()) {
+    track.addEventListener('ended', () => {
+      if (state.deviceAudioCapture === capture) stopDeviceAudio();
+    }, {once:true});
+  }
+  if (!fromScreen) capture.getVideoTracks()[0]?.addEventListener('ended', () => {
+    if (state.deviceAudioCapture === capture) stopDeviceAudio();
+  }, {once:true});
+  for (const id of otherMembers()) sendDeviceAudioTo(id);
+  renderDeviceAudio();
+  return true;
+}
+async function shareDeviceAudio() {
+  if (state.deviceAudioStream) { stopDeviceAudio(); return; }
+  if (!state.joined || !navigator.mediaDevices?.getDisplayMedia) {
+    notify('This browser cannot capture audio from other apps. Desktop Chrome or Edge can share supported tabs and system audio. Mobile users can listen.');
+    return;
+  }
+  try {
+    // Must happen directly from the click: getDisplayMedia needs transient user activation.
+    // The browser always requires choosing a display surface, even for audio-only sharing.
+    const capture = await navigator.mediaDevices.getDisplayMedia(displayAudioOptions());
+    if (!state.joined) { capture.getTracks().forEach(track => track.stop()); return; }
+    if (!hasLiveAudio(capture)) {
+      capture.getTracks().forEach(track => track.stop());
+      notify('No audio was shared. Select a playing Chrome/Edge tab and enable “Share tab audio” in the picker, or select supported system audio.');
+      return;
+    }
+    startDeviceAudio(capture);
+    notify('Your selected tab or device audio is now shared. Wear headphones to avoid echo.');
+  } catch (error) {
+    if (error?.name !== 'NotAllowedError' && error?.name !== 'AbortError')
+      notify('Audio capture is unavailable for that source. Try sharing a browser tab in Chrome or Edge.');
+  }
+}
+async function shareMicrophone() {
+  if (state.deviceAudioStream) {
+    notify('Stop the current audio share before using the microphone.'); return;
+  }
+  if (!state.joined || !navigator.mediaDevices?.getUserMedia) {
+    notify('Microphone capture is unavailable on this device or browser.'); return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {echoCancellation:false, noiseSuppression:false}, video:false
+    });
+    if (!state.joined) { stream.getTracks().forEach(track=>track.stop()); return; }
+    startDeviceAudio(stream, false, 'microphone');
+    notify('Microphone sharing started. This records nearby sound, NOT internal app audio. Use headphones to avoid feedback.');
+  } catch (error) {
+    if (error?.name !== 'NotAllowedError' && error?.name !== 'AbortError')
+      notify('Microphone access failed. Check the microphone permission in your browser.');
+  }
+}
+function stopDeviceAudio() {
+  const capture = state.deviceAudioCapture;
+  const fromScreen = state.deviceAudioFromScreen;
+  state.deviceAudioCapture = null;
+  state.deviceAudioStream = null;
+  state.deviceAudioFromScreen = false;
+  state.deviceAudioSource = '';
+  for (const call of state.deviceAudioCalls.values()) { try { call.close(); } catch {} }
+  state.deviceAudioCalls.clear();
+  if (capture) {
+    const tracks = fromScreen ? capture.getAudioTracks() : capture.getTracks();
+    for (const track of tracks) { try { track.stop(); } catch {} }
+  }
+  renderDeviceAudio();
 }
 function screenTile(owner,stream,isLocal=false) {
   const tile=document.createElement('div'); tile.className='stream-tile';
@@ -492,6 +648,8 @@ $('copyInvite').addEventListener('click',copyInvite);
 $('copyInviteSide').addEventListener('click',copyInvite);
 $('leaveRoom').addEventListener('click',()=>resetRoom());
 $('shareScreen').addEventListener('click',shareScreen);
+$('shareDeviceAudio').addEventListener('click', shareDeviceAudio);
+$('shareMicrophone').addEventListener('click', shareMicrophone);
 $('audioFile').addEventListener('change',e=>{chooseAudio(e.target.files?.[0]);e.target.value='';});
 $('playMusic').addEventListener('click',playPauseMusic);
 $('stopMusic').addEventListener('click',()=>{if(!state.hosting)return;const p=$('musicPlayer');p.pause();p.currentTime=0;sendMusic();});
@@ -500,7 +658,11 @@ $('musicPlayer').addEventListener('play',sendMusic);
 $('musicPlayer').addEventListener('pause',sendMusic);
 $('musicPlayer').addEventListener('seeked',sendMusic);
 $('musicPlayer').addEventListener('ended',sendMusic);
-$('volume').addEventListener('input',e=>{const v=Number(e.target.value)/100;$('remoteMusic').volume=v;$('musicPlayer').volume=v;});
+$('volume').addEventListener('input',e=>{
+  const v=Number(e.target.value)/100;
+  $('remoteMusic').volume=v; $('musicPlayer').volume=v;
+  for (const audio of state.deviceAudioPlayers.values()) audio.volume=v;
+});
 $('chatForm').addEventListener('submit',e=>{
   e.preventDefault(); if(!state.joined)return;
   const body=cleanChat($('chatInput').value); if(!body)return;
@@ -508,8 +670,13 @@ $('chatForm').addEventListener('submit',e=>{
   addChat(myId(),body,message.ts);broadcast(message);
 });
 $('enableAudio').addEventListener('click',async()=>{
-  try{await $('remoteMusic').play();$('enableAudio').hidden=true;notify('Audio enabled. Enjoy the music!');}
-  catch{notify('Your browser blocked audio. Check its autoplay or sound settings.');}
+  const players = [$('remoteMusic'), ...state.deviceAudioPlayers.values()].filter(a => a.srcObject);
+  const results = await Promise.allSettled(players.map(audio => audio.play()));
+  if (results.some(result => result.status === 'rejected')) {
+    notify('Sound is still blocked. Allow audio playback in your browser settings.');
+  } else {
+    $('enableAudio').hidden=true; notify('Shared audio enabled.');
+  }
 });
 setInterval(()=>{
   if(!state.joined)return;
