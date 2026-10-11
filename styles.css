@@ -5,3 +5,13 @@
 .lobby-connect-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px}
 .lobby-connection-status{margin:0;color:var(--lime);font-size:12px;line-height:1.5}
 .lobby-connect-row[hidden],.lobby-connection-status[hidden],#cancelConnection[hidden]{display:none!important}
+
+/* Consented browser-tab / system-audio streaming controls. */
+.device-audio-section{border-top:1px solid #3b3a49;padding:19px 25px 15px;background:linear-gradient(130deg,#212331,#1b1c29 70%)}
+.device-audio-head{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:11px;letter-spacing:1.1px;font-weight:800;color:#e7e3f1}
+.device-audio-section>p{font-size:12px;line-height:1.65;color:#b8b3c6;margin:11px 0}
+.device-audio-controls{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.device-audio-controls #deviceAudioStatus{font-size:11px;color:var(--lime);flex:1;min-width:170px;line-height:1.5}
+.device-audio-section>p.device-audio-help{font-size:10px;color:#9693a8;margin-bottom:0}
+.shared-audio-outputs{height:0;overflow:hidden}
+@media(max-width:590px){.device-audio-section{padding:17px}.device-audio-controls button{width:100%}}
