@@ -61,11 +61,18 @@
           <div class="section-top"><div><span class="section-icon purple">♫</span><span class="section-label">NOW PLAYING TOGETHER</span></div><span class="count-badge music-pill">♫ LIVE AUDIO</span></div>
           <div class="music-main"><div class="album-cover"><span>♫</span><div class="album-rings"></div></div><div class="track-details"><span class="tiny-label">ROOM RADIO</span><h3 id="trackTitle">Nothing on the decks yet</h3><p id="trackSubtitle">The host picks the music. Everyone hears it live.</p><div id="musicProgress" class="progress"><div id="musicProgressFill"></div></div><div class="track-timing"><span id="musicElapsed">0:00</span><span id="musicDuration">0:00</span></div></div></div>
           <div class="music-bottom"><div class="music-controls"><label id="uploadButton" class="btn btn-outline btn-small upload-label" for="audioFile">＋ Choose a song</label><input id="audioFile" type="file" accept="audio/*" hidden /><button id="playMusic" class="btn btn-primary btn-small" disabled>▶ &nbsp; Play</button><button id="stopMusic" class="btn btn-ghost btn-small" disabled>■ Stop</button></div><div class="volume-control"><span class="volume-icon">◖))</span><input id="volume" aria-label="Music volume" type="range" min="0" max="100" value="80" /></div></div>
+          <div class="device-audio-section">
+            <div class="device-audio-head"><span>♫ TAB / DEVICE AUDIO</span><span id="sharedAudioCount" class="count-badge">0 SHARING</span></div>
+            <p>Broadcast audio from a selected playing browser tab or a supported desktop audio source to everyone in the room.</p>
+            <div class="device-audio-controls"><button id="shareDeviceAudio" class="btn btn-primary btn-small" type="button">♫ Share tab / device audio</button><button id="shareMicrophone" class="btn btn-outline btn-small" type="button">🎙 Share microphone instead</button><span id="deviceAudioStatus" role="status" aria-live="polite">No device or tab audio is being shared.</span></div>
+            <p class="device-audio-help">On desktop Chrome or Edge, select a tab and enable <b>Share tab audio</b>, or select system audio if offered. Mobile browsers can listen but generally cannot capture other apps' audio. On mobile, microphone sharing is an ambient-sound fallback, not direct device audio. Share only audio you have permission to broadcast.</p>
+            <div id="sharedAudioOutputs" class="shared-audio-outputs" aria-label="Live shared audio streams"></div>
+          </div>
           <div class="music-notice" id="musicNotice">Only the host can choose a local audio file. Nothing is uploaded to our servers.</div>
           <audio id="musicPlayer" preload="metadata"></audio><audio id="remoteMusic" autoplay playsinline></audio>
-          <button id="enableAudio" class="audio-unlock" hidden>🔊 Tap to enable music playback</button>
+          <button id="enableAudio" class="audio-unlock" hidden>🔊 Tap to enable shared sound</button>
         </div>
-        <div class="bottom-tip">✳ &nbsp; Best on desktop Chrome or Edge for screen sharing. Guests can join from mobile. Music is streamed directly from the host's browser.</div>
+        <div class="bottom-tip">✳ &nbsp; Desktop Chrome or Edge can share a tab's sound (or system audio where supported). Guests can listen on mobile after enabling playback. Screen and audio use direct WebRTC, which may require a TURN relay on restricted networks.</div>
       </section>
       <aside class="side-column">
         <section class="people panel"><div class="section-top"><div><span class="section-icon lime">☺</span><span class="section-label">IN THE ROOM</span></div><span id="peopleCount" class="count-badge">1 / 8</span></div><div id="peopleList" class="people-list"></div><div class="share-invite"><span>Good company makes it better.</span><button id="copyInviteSide">Invite someone ↗</button></div></section>
