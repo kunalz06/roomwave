@@ -1,9 +1,10 @@
 'use strict';
 
 const http = require('node:http');
-const { SIGNAL_PATH, parsePort, peerSettings } = require('./config.cjs');
+const { SIGNAL_PATH, parsePort, peerSettings, allowedOrigins } = require('./config.cjs');
+const { attachRooms } = require('./rooms.cjs');
 
-function createService({ express, ExpressPeerServer, env = process.env, logger = console }) {
+function createService({ express, ExpressPeerServer, roomSocket = attachRooms, env = process.env, logger = console }) {
   const app = express();
   app.disable('x-powered-by');
   app.use((req, res, next) => {
@@ -19,8 +20,9 @@ function createService({ express, ExpressPeerServer, env = process.env, logger =
   const server = http.createServer(app);
   const peerServer = ExpressPeerServer(server, peerSettings(env));
   app.use(SIGNAL_PATH, peerServer);
+  const rooms = roomSocket(server, {allowedOrigins: allowedOrigins(env.ALLOWED_ORIGINS), logger});
   peerServer.on('error', (err) => logger.error('Signaling error:', err.message));
-  return { server, app, peerServer };
+  return { server, app, peerServer, rooms };
 }
 
 function start(env = process.env) {
