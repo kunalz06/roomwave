@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0d0e18" />
+  <meta name="description" content="Roomwave — share your screen, play music, and hang out together in your browser." />
+  <title>Roomwave — Better together</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/styles.css" />
+  <script defer src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+  <!-- Set to your Render service origin after deployment; leave empty for PeerJS Cloud. -->
+  <script>window.ROOMWAVE_SIGNALING_URL = '';</script>
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
+  <div id="toast" role="status" aria-live="polite" class="toast" hidden></div>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Roomwave home"><span class="brand-mark"><svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="1" y="1" width="30" height="30" rx="10" fill="currentColor"/><path d="M7 17c3-7 6-7 9 0s6 7 9 0" stroke="#0E0D19" stroke-width="3" stroke-linecap="round"/></svg></span><span>roomwave<span class="brand-dot">.</span></span></a>
+    <div class="topbar-right"><span class="status-pill"><span class="pulse-dot"></span> YOUR SPACE, YOUR VIBE</span><a href="https://github.com/peers/peerjs" class="top-link" target="_blank" rel="noopener noreferrer">Powered by WebRTC ↗</a></div>
+  </header>
+
+  <main id="lobby" class="lobby">
+    <div class="lobby-copy">
+      <div class="eyebrow"><span class="eyebrow-line"></span> THE INTERNET IS BETTER TOGETHER</div>
+      <h1>Same screen.<br>Same song.<br><span class="gradient-text">Same wavelength.</span></h1>
+      <p class="hero-subtitle">Movie nights, study sessions, late-night hangs — share what you see and listen to the same beat, from anywhere.</p>
+      <div class="feature-row"><span><b>✳</b> Live screen sharing</span><span><b>♫</b> Music in sync</span><span><b>✉</b> Real-time chat</span></div>
+      <div class="quote"><div class="quote-avatars"><i>J</i><i>A</i><i>M</i></div><div><strong>No downloads. No accounts.</strong><small>Just send a link and show up.</small></div></div>
+    </div>
+    <div class="lobby-panel">
+      <div class="panel-orb">♫</div>
+      <div class="panel-head"><span class="tiny-label">LET'S GET CONNECTED</span><span class="live-indicator"><i></i> LIVE ROOMS</span></div>
+      <h2>Make some room<span class="gradient-text">.</span></h2><p class="panel-subtitle">Your next favorite hangout is one click away.</p>
+      <label class="field-label" for="displayName">WHAT SHOULD WE CALL YOU?</label>
+      <div class="input-wrap"><span class="input-icon">☺</span><input id="displayName" type="text" maxlength="24" placeholder="Your name" autocomplete="nickname" /></div>
+      <button id="createRoom" class="btn btn-primary btn-block"><span class="btn-icon">✳</span> Create a room <span class="arrow">↗</span></button>
+      <div class="divider"><span>OR JOIN THE PARTY</span></div>
+      <label class="field-label" for="roomCodeInput">GOT AN INVITE CODE?</label>
+      <div class="join-row"><div class="input-wrap"><span class="input-icon">#</span><input id="roomCodeInput" type="text" maxlength="12" placeholder="ABC123" autocomplete="off" spellcheck="false" /></div><button id="joinRoom" class="btn btn-outline">Join →</button></div>
+      <p class="microcopy">✧ Private-ish, invite-link rooms. No sign-up required.</p>
+    </div>
+    <div class="lobby-decoration" aria-hidden="true"><div class="disc disc-one"></div><div class="disc disc-two"></div><div class="ring-orbit ring-one"></div><div class="ring-orbit ring-two"></div></div>
+  </main>
+
+  <main id="room" class="room" hidden>
+    <section class="room-heading">
+      <div><div class="eyebrow"><span class="eyebrow-line"></span> YOU'RE ON THE SAME WAVELENGTH</div><h1>The hangout <span class="gradient-text">spot.</span></h1><p>Screen share, queue a song, or just stay a while.</p></div>
+      <div class="room-actions"><div class="room-code"><span>ROOM CODE</span><strong id="roomCodeDisplay">———</strong></div><button id="copyInvite" class="btn btn-outline" title="Copy invite link">⌁ <span>Copy invite</span></button><button id="leaveRoom" class="btn btn-ghost danger" title="Leave room">Leave ↗</button></div>
+    </section>
+    <div class="workspace">
+      <section class="main-column">
+        <div class="stage panel">
+          <div class="section-top"><div><span class="section-icon pink">▣</span><span class="section-label">THE BIG SCREEN</span></div><span id="screenCount" class="count-badge">0 SHARING</span></div>
+          <div id="screenStage" class="screen-stage"><div class="empty-stage"><div class="stage-icon"><svg viewBox="0 0 80 80" fill="none" aria-hidden="true"><rect x="10" y="18" width="60" height="43" rx="8" stroke="currentColor" stroke-width="2.5"/><path d="M32 70h16M40 61v9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><circle cx="40" cy="39" r="10" fill="currentColor" fill-opacity=".1" stroke="currentColor" stroke-width="2"/><path d="m37 34 10 5-10 5V34Z" fill="currentColor"/></svg></div><h3>The stage is yours</h3><p>Be the first to share your screen. Everyone in the room will see it here.</p></div></div>
+          <div class="stage-toolbar"><span id="shareStatus" class="muted-text">No one's sharing right now</span><button id="shareScreen" class="btn btn-primary btn-small">▣ &nbsp; Share your screen</button></div>
+        </div>
+        <div class="music panel">
+          <div class="section-top"><div><span class="section-icon purple">♫</span><span class="section-label">NOW PLAYING TOGETHER</span></div><span class="count-badge music-pill">♫ LIVE AUDIO</span></div>
+          <div class="music-main"><div class="album-cover"><span>♫</span><div class="album-rings"></div></div><div class="track-details"><span class="tiny-label">ROOM RADIO</span><h3 id="trackTitle">Nothing on the decks yet</h3><p id="trackSubtitle">The host picks the music. Everyone hears it live.</p><div id="musicProgress" class="progress"><div id="musicProgressFill"></div></div><div class="track-timing"><span id="musicElapsed">0:00</span><span id="musicDuration">0:00</span></div></div></div>
+          <div class="music-bottom"><div class="music-controls"><label id="uploadButton" class="btn btn-outline btn-small upload-label" for="audioFile">＋ Choose a song</label><input id="audioFile" type="file" accept="audio/*" hidden /><button id="playMusic" class="btn btn-primary btn-small" disabled>▶ &nbsp; Play</button><button id="stopMusic" class="btn btn-ghost btn-small" disabled>■ Stop</button></div><div class="volume-control"><span class="volume-icon">◖))</span><input id="volume" aria-label="Music volume" type="range" min="0" max="100" value="80" /></div></div>
+          <div class="music-notice" id="musicNotice">Only the host can choose a local audio file. Nothing is uploaded to our servers.</div>
+          <audio id="musicPlayer" preload="metadata"></audio><audio id="remoteMusic" autoplay playsinline></audio>
+          <button id="enableAudio" class="audio-unlock" hidden>🔊 Tap to enable music playback</button>
+        </div>
+        <div class="bottom-tip">✳ &nbsp; Best on desktop Chrome or Edge for screen sharing. Guests can join from mobile. Music is streamed directly from the host's browser.</div>
+      </section>
+      <aside class="side-column">
+        <section class="people panel"><div class="section-top"><div><span class="section-icon lime">☺</span><span class="section-label">IN THE ROOM</span></div><span id="peopleCount" class="count-badge">1 / 8</span></div><div id="peopleList" class="people-list"></div><div class="share-invite"><span>Good company makes it better.</span><button id="copyInviteSide">Invite someone ↗</button></div></section>
+        <section class="chat panel"><div class="section-top"><div><span class="section-icon yellow">✉</span><span class="section-label">ROOM CHAT</span></div><span class="count-badge">LIVE</span></div><div id="chatMessages" class="chat-messages" role="log" aria-label="Room chat" aria-live="polite"><div class="chat-empty">Say hey to the room 👋<span>Good conversations start somewhere.</span></div></div><form id="chatForm" class="chat-compose"><input id="chatInput" maxlength="450" placeholder="Say something nice..." aria-label="Message" autocomplete="off" /><button aria-label="Send message" type="submit">➤</button></form></section>
+      </aside>
+    </div>
+  </main>
+  <footer class="footer"><span>© 2026 Roomwave · Made for being together.</span><span>Be kind. Share only content you have permission to stream.</span></footer>
+</body>
+</html>
