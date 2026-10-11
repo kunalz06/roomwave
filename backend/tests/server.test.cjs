@@ -39,7 +39,7 @@ test('HTTP app exposes an unauthenticated health route and mounts PeerJS', () =>
     assert.equal(opts.allow_discovery, false);
     return peerServer;
   }
-  const instance = createService({ express, ExpressPeerServer, env: {} });
+  const instance = createService({ express, ExpressPeerServer, roomSocket: ()=>({}), env: {} });
   assert.ok(instance.server);
   assert.ok(middleware.some(([path, obj]) => path === '/peerjs' && obj === peerServer));
   const headers = {};
