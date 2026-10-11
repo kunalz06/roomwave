@@ -12,7 +12,8 @@ const state = {
   audioContext: null, audioDestination: null, audioSource: null,
   musicCalls: new Map(), incomingMusicCall: null, trackObjectURL: null,
   track: { title: '', duration: 0, position: 0, playing: false, stamped: 0 },
-  joinTimeout: null, countMessages: 0, toastTimeout: null
+  joinTimeout: null, setupTimeout: null, warmupAbort: null, connectAttempt: 0,
+  countMessages: 0, toastTimeout: null
 };
 
 function notify(message) {
@@ -21,6 +22,17 @@ function notify(message) {
   element.hidden = false;
   clearTimeout(state.toastTimeout);
   state.toastTimeout = setTimeout(() => { element.hidden = true; }, 5000);
+}
+function setLobbyBusy(busy, message = '') {
+  $('createRoom').disabled = busy;
+  $('joinRoom').disabled = busy;
+  $('cancelConnection').hidden = !busy;
+  $('lobbyConnectionStatus').hidden = !busy;
+  $('lobbyConnectionStatus').textContent = busy ? message : '';
+}
+function connectionFailed(message) {
+  resetRoom();
+  notify(message);
 }
 function makeCode() {
   const bytes = new Uint8Array(6);
@@ -47,7 +59,13 @@ function initIdentity() {
   try { localStorage.setItem('roomwave:name', state.name); } catch { /* private browsing */ }
 }
 function resetRoom() {
+  ++state.connectAttempt; // Invalidates any outstanding free-tier wakeup promise.
+  state.warmupAbort?.abort();
+  state.warmupAbort = null;
+  clearTimeout(state.setupTimeout);
+  state.setupTimeout = null;
   clearTimeout(state.joinTimeout);
+  state.joinTimeout = null;
   stopSharing();
   for (const call of state.musicCalls.values()) { try { call.close(); } catch {} }
   state.musicCalls.clear();
@@ -55,9 +73,11 @@ function resetRoom() {
   state.incomingMusicCall = null;
   for (const conn of state.connections.values()) { try { conn.close(); } catch {} }
   state.connections.clear();
-  try { state.peer?.destroy(); } catch {}
-  state.peer = null;
+  const oldPeer = state.peer;
+  state.peer = null; // Ignore synchronous close/error events from destruction.
+  try { oldPeer?.destroy(); } catch {}
   state.connecting = false;
+  setLobbyBusy(false);
   $('musicPlayer').pause();
   $('musicPlayer').removeAttribute('src');
   $('musicPlayer').load();
@@ -86,66 +106,107 @@ function resetRoom() {
 }
 async function enterRoom(isHost, code) {
   if (state.peer || state.connecting) return;
-  if (!window.Peer) { notify('Connection library failed to load. Please check your internet and refresh.'); return; }
+  if (!window.Peer) {
+    notify('Connection library failed to load. Check your internet connection and reload the page.');
+    return;
+  }
   initIdentity();
   state.connecting = true;
-  $('createRoom').disabled = true;
-  $('joinRoom').disabled = true;
+  const attempt = ++state.connectAttempt;
   const endpoint = String(window.ROOMWAVE_SIGNALING_URL || '').trim();
+  setLobbyBusy(true, 'Connecting to the room server…');
+
   let peerOptions;
   try {
     peerOptions = peerOptionsFromEndpoint(endpoint);
     if (endpoint) {
-      // Waking a free Render instance before opening WebSocket avoids cold-start failures.
-      notify('Connecting to the room server. The first connection can take around a minute…');
-      const healthUrl = `${new URL(endpoint).origin}/health`;
-      const response = await fetch(healthUrl, { cache:'no-store', signal: AbortSignal.timeout(90000) });
-      if (!response.ok) throw new Error('Signaling server not ready');
+      // Render Free may sleep; wake it before opening the PeerJS WebSocket.
+      setLobbyBusy(true, 'Waking the free room server — this can take a minute…');
+      const controller = new AbortController();
+      state.warmupAbort = controller;
+      const timeout = setTimeout(() => controller.abort(), 85000);
+      try {
+        const healthUrl = `${new URL(endpoint).origin}/health`;
+        const response = await fetch(healthUrl, { cache: 'no-store', signal: controller.signal });
+        if (!response.ok) throw new Error('Room server health check failed');
+      } finally {
+        clearTimeout(timeout);
+        if (state.warmupAbort === controller) state.warmupAbort = null;
+      }
     }
   } catch (error) {
-    state.connecting = false;
-    $('createRoom').disabled = false;
-    $('joinRoom').disabled = false;
-    notify('Room server unavailable. Please try again.');
+    if (attempt === state.connectAttempt) connectionFailed('Room server unavailable. Check your connection and try again.');
     return;
   }
+  if (attempt !== state.connectAttempt) return;
   state.code = code;
   state.hosting = isHost;
   state.members.set(isHost ? peerHost() : '__pending__', state.name);
   const chosenId = isHost ? peerHost() : undefined;
-  const peer = new window.Peer(chosenId, peerOptions);
+  let peer;
+  try { peer = new window.Peer(chosenId, peerOptions); }
+  catch {
+    connectionFailed('Could not initialize room connection. Reload and try again.');
+    return;
+  }
   state.connecting = false;
   state.peer = peer;
-  $('createRoom').disabled = true;
-  $('joinRoom').disabled = true;
+  setLobbyBusy(true, 'Registering with the room server…');
+  state.setupTimeout = setTimeout(() => {
+    if (state.peer === peer && !state.joined) {
+      connectionFailed('Room connection timed out. Please try again.');
+    }
+  }, 20000);
   peer.on('open', (id) => {
-    $('createRoom').disabled = false;
-    $('joinRoom').disabled = false;
+    if (state.peer !== peer) return;
+    clearTimeout(state.setupTimeout);
+    state.setupTimeout = null;
     state.members.delete('__pending__');
     state.members.set(id, state.name);
     if (state.hosting) {
       displayRoom();
     } else {
+      setLobbyBusy(true, 'Connecting to the room host…');
       connectTo(peerHost(), true);
       state.joinTimeout = setTimeout(() => {
-        if (!state.joined && state.peer === peer) { notify('Could not reach the room host. Check the invite code.'); resetRoom(); }
-      }, 14000);
+        if (!state.joined && state.peer === peer) {
+          connectionFailed('Could not join that room. Check the code and that the host is still online.');
+        }
+      }, 20000);
     }
   });
   peer.on('connection', registerConnection);
   peer.on('call', acceptCall);
-  peer.on('disconnected', () => { if (state.peer === peer) notify('Signaling connection lost. Trying to reconnect…'); });
+  peer.on('disconnected', () => {
+    if (state.peer !== peer) return;
+    if (!state.joined) {
+      connectionFailed('Lost the connection to the room server. Please retry.');
+      return;
+    }
+    notify('Room server disconnected. Attempting to reconnect…');
+    try { peer.reconnect(); } catch { /* Room may reconnect automatically. */ }
+  });
+  peer.on('close', () => {
+    if (state.peer === peer) connectionFailed('Room connection ended. Please create or join a room again.');
+  });
   peer.on('error', (error) => {
     if (state.peer !== peer) return;
     const type = error?.type || '';
-    if (type === 'unavailable-id') { notify('That room code is already taken. Please create another room.'); resetRoom(); }
-    else if (type === 'peer-unavailable' && !state.joined) { notify('Room not found. Ask the host to create it first.'); resetRoom(); }
-    else if (type === 'network' || type === 'server-error' || type === 'socket-error') { notify('Connection issue. Check your network or try again.'); }
+    if (type === 'unavailable-id') {
+      connectionFailed('That room code is already in use. Create another room.');
+    } else if (type === 'peer-unavailable' && !state.joined) {
+      connectionFailed('Room not found. Ask the host to create it first.');
+    } else if (['network', 'server-error', 'socket-error', 'socket-closed', 'browser-incompatible', 'invalid-id', 'invalid-key', 'ssl-unavailable'].includes(type)) {
+      if (!state.joined) connectionFailed('Room connection failed. Check your network and try again.');
+      else notify('Connection issue. If participants disappear, leave and rejoin the room.');
+    }
   });
 }
 function displayRoom() {
   if (state.joined) return;
   clearTimeout(state.joinTimeout);
+  state.joinTimeout = null;
+  setLobbyBusy(false);
   state.joined = true;
   $('lobby').hidden = true;
   $('room').hidden = false;
@@ -430,6 +491,7 @@ async function copyInvite() {
   catch{try{window.prompt('Copy your invite link:',url);}catch{notify(`Room code: ${state.code}`);}}
 }
 $('createRoom').addEventListener('click',()=>enterRoom(true,makeCode()));
+$('cancelConnection').addEventListener('click', () => resetRoom());
 $('joinRoom').addEventListener('click',()=>{
   const code=normalizeRoomCode($('roomCodeInput').value);
   if(!isValidRoomCode(code)){notify('Enter a valid 6-character room code.');return;}
