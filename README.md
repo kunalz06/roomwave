@@ -89,3 +89,16 @@ Alternatively, create a **Render Web Service** directly using your GitHub reposi
 - `render.yaml`: reproducible Render free-tier deployment
 
 Copyright © 2026. All rights reserved unless separately licensed.
+
+## Live tab/device audio sharing
+
+Anyone in a Roomwave room can click **Share tab / device audio** and choose a source through the browser's permission picker. Desktop Chrome or Edge can share audio from some tabs; supported desktop OS/browser combinations may offer window or system audio. The picker **requires a screen/tab selection even when only audio is sent to the room**. If the chosen source contains no audio track, Roomwave stops capture and shows an actionable message. Screen sharing also requests optional audio and sends it as a separate WebRTC audio-only track. A **Share microphone instead** fallback is available in browsers that support microphone capture; it records surrounding sound, not internal app audio.
+
+Listeners—including mobile browser users—can hear the shared stream when WebRTC connectivity and audio autoplay permissions allow; a visible **Tap to enable shared sound** button handles autoplay restrictions. The host's file-player audio and screen sharing remain available. Each sharing user controls and can stop their own capture; Render handles room signaling, not media relay.
+
+### Platform limitations
+
+- **Desktop Chrome/Edge:** tab audio is the recommended option. System/window audio is offered only when the OS/browser supports it; no option can force unavailable system audio.
+- **iOS / Android browser:** capturing audio playing in another app via `getDisplayMedia()` is generally unsupported. Mobile can **listen**; microphone capture is an optional lower-quality fallback and cannot replace internal system audio capture.
+- **Network:** media is WebRTC peer-to-peer, so particularly restrictive networks can require a separately configured TURN relay. Render's free signaling server does not provide TURN.
+- **Rights:** share only sources you have permission to rebroadcast. This does not unlock DRM-protected audio or bypass Spotify's redistribution restrictions.
