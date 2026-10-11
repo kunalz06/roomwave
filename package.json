@@ -1,0 +1,10 @@
+{
+  "name": "roomwave",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "check": "node --check app.js && node --check room-utils.mjs"
+  }
+}
