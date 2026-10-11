@@ -1,0 +1,91 @@
+# Roomwave
+
+A lightweight screen-share-and-listen-together browser app with a Vercel static frontend and an optional **Render Free Web Service** for private PeerJS signaling.
+
+## Features
+
+- Create or join six-character invite-code rooms (up to 8 participants).
+- Share screens over WebRTC, with multiple sharers supported on desktop browsers.
+- Host selects a local audio file; the browser streams it directly to guests. No media file upload to either host.
+- Music playback controls, ephemeral group chat, and transient room roster.
+- Mobile-friendly watching and listening. Screen capture on mobile browsers is typically unavailable.
+
+## Architecture
+
+```text
+Vercel static site (index.html, app.js, CSS)
+    |  HTTPS health request + WSS signaling (room setup only)
+    v
+Render Free Node Web Service (backend/server.cjs)
+    |  PeerJS ExpressPeerServer mounted at /peerjs
+    |  No database; no stored messages, media, or accounts
+    v
+Browsers use encrypted WebRTC peer-to-peer data/media links
+```
+
+Render only exchanges WebRTC connection setup information. **It does not relay or store music or screen video.** Direct connectivity can fail on restrictive networks unless you separately provision a TURN server (which is not included in the free-tier build).
+
+The previous production site stays on public PeerJS Cloud signaling until the Render service exists and its URL is explicitly set in the frontend. This avoids breaking the already-live app while deploying.
+
+## Run locally
+
+The frontend has no build step. Run both services in separate terminals:
+
+```bash
+# Terminal 1: free local signaling backend
+cd backend
+npm install
+npm start
+
+# Terminal 2, from repository root: frontend
+python3 -m http.server 8080
+```
+
+In `index.html`, temporarily set:
+
+```html
+<script>window.ROOMWAVE_SIGNALING_URL = 'http://localhost:10000';</script>
+```
+
+Then open http://localhost:8080. Restore the URL to an empty string if you want to use PeerJS Cloud as a temporary fallback.
+
+### Tests
+
+```bash
+npm run check && npm test
+cd backend && npm run check && npm test
+```
+
+The tests cover frontend URL validation and backend wiring, but successful **real WebRTC connections** must also be tested with two browsers from different networks after deployment.
+
+## Deploy Render backend at no compute charge
+
+1. Push this project to a new GitHub repository (e.g., `kunalz06/roomwave`). A Git remote is required for Render's Git-backed creation flow.
+2. Open **https://dashboard.render.com/blueprint/new** and select that repository. The root-level `render.yaml` defines exactly one `web` service: `roomwave-signaling` with `plan: free`, `region: singapore`, root directory `backend`, `npm install --omit=dev`, and `npm start`. No paid services or databases are requested.
+3. Wait for the Render deployment to become Live; verify `https://YOUR-SERVICE.onrender.com/health` returns `{"status":"ok"}`.
+4. Set in `index.html`: `window.ROOMWAVE_SIGNALING_URL = 'https://YOUR-SERVICE.onrender.com';`. Use the actual URL assigned by Render; do not guess it. Redeploy the frontend to Vercel. The browser connects to `wss://YOUR-SERVICE.onrender.com/peerjs`.
+5. Visit Roomwave in two browsers, create a room and join its invite code. Verify chat, music, and screen sharing. Update `ALLOWED_ORIGINS` in Render if you change the frontend domain.
+
+Alternatively, create a **Render Web Service** directly using your GitHub repository; choose the **Free** plan, Node runtime, Singapore region, build command `cd backend && npm install --omit=dev`, start command `cd backend && npm start`, and environment variable `ALLOWED_ORIGINS=https://roomwave-together.vercel.app`.
+
+**Free-tier caveats:** Render spins down web instances after 15 minutes of no inbound HTTP requests or WebSocket messages. The client calls `/health` first to awaken a sleeping service; initial connection can take around a minute. Render's free allowance is 750 instance hours per workspace per month and monthly bandwidth/build quotas also apply. Free is best for a prototype, not guaranteed production uptime. If you enable billing, extra usage may incur charges according to your Render account settings.
+
+## Security and limitations
+
+- Use only music and screen content you have permission to share.
+- Invite codes are **not passwords**; there is no signup, account verification, moderation, or admission authorization.
+- Public PeerServer signaling is not a full-fledged scalable room backend. Peer discovery is disabled and CORS limits browser API origins, but neither substitutes for authentication/rate limiting.
+- Host must stay online to keep the room and transmit music. Track data, room chat, and participant state live in browser memory only.
+- WebRTC connections are encrypted, but peers establish direct connections and may see each other's public network IPs. PeerJS Cloud/Render signaling sees connection metadata; no media is intentionally stored.
+- Browser autoplay can require listeners to tap the enable-audio button.
+- Keep room sizes small (2–5 recommended) without an SFU, TURN, or bandwidth engineering.
+- App loads pinned PeerJS 1.5.5 from an external CDN.
+
+## Project layout
+
+- `index.html`, `styles.css`, `app.js`, `room-utils.mjs`, `favicon.svg`: static frontend
+- `backend/server.cjs`, `backend/config.cjs`, `backend/package.json`: Node.js PeerJS signaling server
+- `backend/tests/`, `tests/`: Node.js unit tests
+- `render.yaml`: reproducible Render free-tier deployment
+
+Copyright © 2026. All rights reserved unless separately licensed.
