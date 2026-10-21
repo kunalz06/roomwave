@@ -157,6 +157,11 @@ function createRoomHub({ logger = console } = {}) {
       else safeSend(socket,{type:'youtube-queue-error',message:'Could not add video. Check the link or queue limit.'});
     } else if(type==='youtube' && session.id===room.hostId) {
       if(youtubeQueue.setPlayback(session.code,message.youtube)) emitYouTube(session.code);
+    } else if(session.id===room.hostId && type==='youtube-duration') {
+      // Verified host iframe metadata; this enables autonomous next-track
+      // selection without hosting YouTube media on Render.
+      if(youtubeQueue.setDuration(session.code,message.videoId,message.duration))
+        emitYouTube(session.code);
     } else if(session.id===room.hostId && type==='youtube-mode') {
       if(youtubeQueue.setMode(session.code,message.mode)) emitYouTube(session.code);
     } else if(session.id===room.hostId && (type==='youtube-next'||type==='youtube-ended')) {
@@ -214,7 +219,15 @@ function attachRooms(server, { allowedOrigins = [], logger = console } = {}) {
     }
   },25000);
   heartbeat.unref?.();
-  const botTicker=setInterval(()=>hub.bot.tick(),1000);
+  const botTicker=setInterval(()=>{
+    hub.bot.tick();
+    for(const code of hub.youtubeQueue.tick()){
+      hub.youtubeQueue.snapshot(code) && hub.rooms.get(code) &&
+        hub.rooms.get(code).participants.forEach(p=>safeSend(p.socket,{
+          type:'youtube-state',...hub.youtubeQueue.snapshot(code)
+        }));
+    }
+  },1000);
   botTicker.unref?.();
   wss.on('close', () => {clearInterval(heartbeat);clearInterval(botTicker);});
   return {hub, wss};
