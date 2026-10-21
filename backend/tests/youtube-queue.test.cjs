@@ -7,7 +7,7 @@ test('first submitted video becomes current; other submissions form an editable 
   const q=createYouTubeQueue();q.setup('BCDEFG');
   assert.equal(q.add('BCDEFG',a,'Alice'),true);
   assert.equal(q.snapshot('BCDEFG').youtube.videoId,a);
-  assert.equal(q.snapshot('BCDEFG').youtube.playing,true);
+  assert.equal(q.snapshot('BCDEFG').youtube.playing,false);
   assert.equal(q.snapshot('BCDEFG').queue.length,0);
   assert.equal(q.add('BCDEFG',b,'Bob'),true);
   assert.equal(q.add('BCDEFG',c,'Charlie'),true);
