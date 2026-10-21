@@ -32,6 +32,12 @@ function createYouTubeQueue({now=()=>Date.now(),random=n=>randomInt(n)}={}) {
     if(!r||typeof videoId!=='string'||!ID.test(videoId)||r.queue.length>=MAX_QUEUE)return false;
     // Queue even if nothing is playing so the host chooses when to start.
     r.queue.push({id:randomBytes(9).toString('hex'),videoId,by:cleanText(by)});
+    // The first valid contribution becomes the current video automatically.
+    // Playback still depends on YouTube's visible-player/autoplay permissions.
+    if(!r.current){
+      const first=r.queue.shift();
+      r.current={videoId:first.videoId,position:0,playing:true,updatedAt:now()};
+    }
     return true;
   }
   function setMode(code,mode){const r=rooms.get(code);if(!r||!MODES.has(mode))return false;r.mode=mode;return true;}
@@ -45,7 +51,11 @@ function createYouTubeQueue({now=()=>Date.now(),random=n=>randomInt(n)}={}) {
   function next(code,ended=false){
     const r=rooms.get(code);if(!r)return false;
     if(ended && r.mode==='manual'){
-      if(r.current){r.current.playing=false;r.current.updatedAt=now();}
+      if(r.current){
+        const c=r.current;
+        c.position=Math.min(86400,c.position+(c.playing?Math.max(0,(now()-c.updatedAt)/1000):0));
+        c.playing=false;c.updatedAt=now();
+      }
       return true;
     }
     if(ended && r.mode==='repeat-one' && r.current) {
