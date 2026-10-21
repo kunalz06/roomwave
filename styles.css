@@ -78,3 +78,33 @@
 
 .youtube-queue-thumbnail{width:72px;height:54px;flex:none;object-fit:cover;border-radius:6px;background:#181823}
 @media(max-width:420px){.youtube-queue-thumbnail{width:56px;height:42px}}
+
+/* Calm, content-first rooms; less decorative copy and progressive disclosure. */
+.quote,.feature-row,.lobby-decoration,.top-link,.status-pill,.bottom-tip{display:none!important}
+.topbar{height:68px}
+.lobby{min-height:calc(100vh - 120px);gap:28px;padding:28px 0 50px}
+.lobby-copy h1{font-size:clamp(38px,4.5vw,64px);line-height:1.1;letter-spacing:-2.9px}
+.room-heading{margin:18px 0 18px}
+.room-heading h1{font-size:clamp(29px,3vw,42px)!important;line-height:1.2!important;letter-spacing:-1.5px!important;margin:4px 0!important}
+.room-heading .eyebrow{display:none}
+.room-actions{gap:10px}
+.bot-section,.youtube-section{background:transparent;margin:12px 0 10px;border:1px solid var(--border);padding:14px}
+.music-main{margin-top:10px}
+.bot-intro,.youtube-section>p{margin:6px 0 12px;line-height:1.4}
+.bot-now{padding:10px}
+.bot-now strong{font-size:14px}
+.bot-footnote{font-size:11px;opacity:.75}
+.youtube-queue-list{max-height:220px}
+.advanced-audio{border-top:1px solid var(--border);margin:16px 0 0;padding:12px 0 0}
+.advanced-audio>summary{list-style:none;cursor:pointer;color:var(--ink);font-size:13px;font-weight:750;display:flex;gap:12px;align-items:center;justify-content:space-between;padding:10px 6px;border-radius:8px}
+.advanced-audio>summary::-webkit-details-marker{display:none}
+.advanced-audio>summary::before{content:'＋';font-size:18px;color:var(--lime)}
+.advanced-audio[open]>summary::before{content:'−'}
+.advanced-audio>summary span{color:var(--muted);font-size:11px;font-weight:400}
+.advanced-audio .device-audio-section{margin:20px 0 6px}
+.advanced-audio .music-notice{font-size:11px}
+.connection-banner{display:flex;align-items:center;gap:10px;padding:10px 13px;margin:0 0 12px;background:var(--panel);border:1px solid var(--border);border-radius:12px;font-size:13px}
+.connection-banner[hidden]{display:none!important}
+.connection-banner .btn{margin-left:auto;height:32px}
+.connection-pulse{width:9px;height:9px;border-radius:50%;background:var(--pink);box-shadow:0 0 0 3px #fca6c522}
+@media(max-width:760px){.room-heading{gap:12px}.lobby-copy{padding:0}.topbar{height:62px}.bot-section,.youtube-section{padding:12px}.lobby-panel{padding:24px}.connection-banner{position:sticky;top:0;z-index:5}}
