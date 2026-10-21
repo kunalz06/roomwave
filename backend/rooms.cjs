@@ -22,7 +22,7 @@ function cleanChat(input) {
   return String(input ?? '').replace(/[\x00-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0,450);
 }
 function safeSend(socket, payload) {
-  if (socket.readyState === 1) socket.send(JSON.stringify(payload));
+  if (socket?.readyState === 1) socket.send(JSON.stringify(payload));
 }
 
 function createRoomHub({ logger = console } = {}) {
