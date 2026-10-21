@@ -135,3 +135,19 @@ This is a synchronized server-hosted audio jukebox, not a Discord voice particip
 **Limits and security:** 12 MiB maximum per track, 5 total queued/current tracks per room, 64 MiB global storage cap, 2-hour maximum track duration. Host-only upload uses an unguessable token delivered to the room host WebSocket session and checked on the backend. Audio files are served using unguessable track URLs and HTTP Range support, without extracting YouTube media. The files are transient and are deleted as they finish or the host leaves; the URLs should be treated like temporary share links. The bot applies MIME validation, origin allowlist for uploads, and memory/queue limits, but it does not scan uploaded content or validate media magic bytes. Only upload files you own or have permission to rebroadcast.
 
 YouTube watch parties remain separate, use official visible embeds, and retain YouTube ads. Music Bot does not fetch, download, transform, or stream YouTube audio.
+
+## Collaborative YouTube queue and playback modes
+
+Anyone currently connected to a Roomwave room can paste a YouTube video link into the Watch Party panel and add it to the shared queue. Render keeps the authoritative queue (up to 40 queued videos, per room). Only the room host can start a queued video, reorder or remove queued videos, skip to the next video, or change playback mode:
+- **Sequential:** on the host's YouTube IFrame Player API `ENDED` event, play queued videos in order.
+- **Shuffle:** choose a queued item at random when the host's player ends or the host presses Next.
+- **Repeat current:** replay the same current video when the host's player ends.
+- **Manual:** stop at the end and let the host choose the next track.
+
+The queue is transmitted to new guests on room join and refreshed to existing members over Render's /rooms WebSocket. These are valid YouTube video or YouTube Music watch links, not entire playlist imports. Videos run in **the official, visible YouTube embedded player on each participant's device**. YouTube retains its ads, controls and restrictions; Roomwave does not extract audio or provide background-only YouTube playback. On devices that block autoplay, users must tap Play in the visible player. Automatic transitions rely on the host's iframe reporting end of playback; when the host goes offline, Roomwave does not continue playing the YouTube queue.
+
+## Installable PWA and background behavior
+
+Roomwave now has an installable web app manifest and an app-shell service worker. On supported browsers, use the Install app button or **Add to Home Screen**; on iOS, use Safari's Share > Add to Home Screen. The worker only caches the frontend shell for offline loading; it does not run WebRTC or room WebSockets after the app has been stopped.
+
+You can often keep Roomwave open and hear its **own authorized music bot/local audio** while switching apps, depending on platform media policies. The Media Session API provides lock-screen transport controls where supported. However **no browser-only app can guarantee a persistent live room or media stream after the browser is force-closed, the tab is cleared, or mobile OS suspends the page**. YouTube always requires a visible embedded player and is paused when hidden or scrolled out of view. A native client with an OS-approved background audio service is required for more dependable background music.
