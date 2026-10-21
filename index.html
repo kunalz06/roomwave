@@ -23,55 +23,54 @@
   <div id="toast" role="status" aria-live="polite" class="toast" hidden></div>
   <header class="topbar">
     <a class="brand" href="/" aria-label="Roomwave home"><span class="brand-mark"><svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="1" y="1" width="30" height="30" rx="10" fill="currentColor"/><path d="M7 17c3-7 6-7 9 0s6 7 9 0" stroke="#0E0D19" stroke-width="3" stroke-linecap="round"/></svg></span><span>roomwave<span class="brand-dot">.</span></span></a>
-    <div class="topbar-right"><button type="button" class="btn btn-outline btn-small" id="installRoomwave">Install app</button><span class="status-pill"><span class="pulse-dot"></span> YOUR SPACE, YOUR VIBE</span><a href="https://github.com/peers/peerjs" class="top-link" target="_blank" rel="noopener noreferrer">Powered by WebRTC ↗</a></div>
+    <div class="topbar-right"><button type="button" class="btn btn-outline btn-small" id="installRoomwave" hidden>Install</button><span class="status-pill"><span class="pulse-dot"></span> YOUR SPACE, YOUR VIBE</span><a href="https://github.com/peers/peerjs" class="top-link" target="_blank" rel="noopener noreferrer">Powered by WebRTC ↗</a></div>
   </header>
 
   <main id="lobby" class="lobby">
     <div class="lobby-copy">
-      <div class="eyebrow"><span class="eyebrow-line"></span> THE INTERNET IS BETTER TOGETHER</div>
-      <h1>Same screen.<br>Same song.<br><span class="gradient-text">Same wavelength.</span></h1>
-      <p class="hero-subtitle">Movie nights, study sessions, late-night hangs — share what you see and listen to the same beat, from anywhere.</p>
+      <div class="eyebrow"><span class="eyebrow-line"></span> ROOMWAVE</div>
+      <h1>Watch. Listen.<br><span class="gradient-text">Together.</span></h1>
+      <p class="hero-subtitle">Share screens, queue music, and chat.</p>
       <div class="feature-row"><span><b>✳</b> Live screen sharing</span><span><b>♫</b> Music in sync</span><span><b>✉</b> Real-time chat</span></div>
       <div class="quote"><div class="quote-avatars"><i>J</i><i>A</i><i>M</i></div><div><strong>No downloads. No accounts.</strong><small>Just send a link and show up.</small></div></div>
     </div>
     <div class="lobby-panel">
       <div class="panel-orb">♫</div>
-      <div class="panel-head"><span class="tiny-label">LET'S GET CONNECTED</span><span class="live-indicator"><i></i> LIVE ROOMS</span></div>
-      <h2>Make some room<span class="gradient-text">.</span></h2><p class="panel-subtitle">Your next favorite hangout is one click away.</p>
+      <div class="panel-head"><span class="tiny-label">ROOMWAVE</span><span class="live-indicator"><i></i> LIVE ROOMS</span></div>
+      <h2>Join the fun<span class="gradient-text">.</span></h2><p class="panel-subtitle">Start or join a room.</p>
       <label class="field-label" for="displayName">WHAT SHOULD WE CALL YOU?</label>
       <div class="input-wrap"><span class="input-icon">☺</span><input id="displayName" type="text" maxlength="24" placeholder="Your name" autocomplete="nickname" /></div>
-      <button id="createRoom" class="btn btn-primary btn-block"><span class="btn-icon">✳</span> Create a room <span class="arrow">↗</span></button>
-      <div class="divider"><span>OR JOIN THE PARTY</span></div>
-      <label class="field-label" for="roomCodeInput">GOT AN INVITE CODE?</label>
+      <button id="createRoom" class="btn btn-primary btn-block"><span class="btn-icon">✳</span> Create room <span class="arrow">↗</span></button>
+      <div class="divider"><span>OR JOIN</span></div>
+      <label class="field-label" for="roomCodeInput">ROOM CODE</label>
       <div class="join-row"><div class="input-wrap"><span class="input-icon">#</span><input id="roomCodeInput" type="text" maxlength="12" placeholder="ABC123" autocomplete="off" spellcheck="false" /></div><button id="joinRoom" class="btn btn-outline">Join →</button></div>
       <div class="lobby-connect-row"><p id="lobbyConnectionStatus" class="lobby-connection-status" role="status" aria-live="polite" hidden></p><button id="cancelConnection" class="btn btn-ghost btn-small" hidden>Cancel</button></div>
-      <p class="microcopy">✧ Private-ish, invite-link rooms. No sign-up required.</p>
+      <p class="microcopy">No account needed.</p>
     </div>
     <div class="lobby-decoration" aria-hidden="true"><div class="disc disc-one"></div><div class="disc disc-two"></div><div class="ring-orbit ring-one"></div><div class="ring-orbit ring-two"></div></div>
   </main>
 
   <main id="room" class="room" hidden>
     <section class="room-heading">
-      <div><div class="eyebrow"><span class="eyebrow-line"></span> YOU'RE ON THE SAME WAVELENGTH</div><h1>The hangout <span class="gradient-text">spot.</span></h1><p>Screen share, queue a song, or just stay a while.</p></div>
+      <div><div class="eyebrow"><span class="eyebrow-line"></span> ROOMWAVE</div><h1>Your <span class="gradient-text">room.</span></h1></div>
       <div class="room-actions"><div class="room-code"><span>ROOM CODE</span><strong id="roomCodeDisplay">———</strong></div><button id="copyInvite" class="btn btn-outline" title="Copy invite link">⌁ <span>Copy invite</span></button><button id="leaveRoom" class="btn btn-ghost danger" title="Leave room">Leave ↗</button></div>
     </section>
+    <div id="connectionBanner" class="connection-banner" role="status" aria-live="polite" hidden><span class="connection-pulse"></span><span id="connectionText">Reconnecting…</span><button id="retryConnection" type="button" class="btn btn-outline btn-small">Retry</button></div>
     <div class="workspace">
       <section class="main-column">
         <div class="stage panel">
-          <div class="section-top"><div><span class="section-icon pink">▣</span><span class="section-label">THE BIG SCREEN</span></div><span id="screenCount" class="count-badge">0 SHARING</span></div>
-          <div id="screenStage" class="screen-stage"><div class="empty-stage"><div class="stage-icon"><svg viewBox="0 0 80 80" fill="none" aria-hidden="true"><rect x="10" y="18" width="60" height="43" rx="8" stroke="currentColor" stroke-width="2.5"/><path d="M32 70h16M40 61v9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><circle cx="40" cy="39" r="10" fill="currentColor" fill-opacity=".1" stroke="currentColor" stroke-width="2"/><path d="m37 34 10 5-10 5V34Z" fill="currentColor"/></svg></div><h3>The stage is yours</h3><p>Be the first to share your screen. Everyone in the room will see it here.</p></div></div>
+          <div class="section-top"><div><span class="section-icon pink">▣</span><span class="section-label">SCREEN</span></div><span id="screenCount" class="count-badge">0 SHARING</span></div>
+          <div id="screenStage" class="screen-stage"><div class="empty-stage"><div class="stage-icon"><svg viewBox="0 0 80 80" fill="none" aria-hidden="true"><rect x="10" y="18" width="60" height="43" rx="8" stroke="currentColor" stroke-width="2.5"/><path d="M32 70h16M40 61v9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><circle cx="40" cy="39" r="10" fill="currentColor" fill-opacity=".1" stroke="currentColor" stroke-width="2"/><path d="m37 34 10 5-10 5V34Z" fill="currentColor"/></svg></div><h3>Share a screen</h3><p>Everyone can watch here.</p></div></div>
           <div class="stage-toolbar"><span id="shareStatus" class="muted-text">No one's sharing right now</span><button id="shareScreen" class="btn btn-primary btn-small">▣ &nbsp; Share your screen</button></div>
         </div>
         <div class="music panel">
-          <div class="section-top"><div><span class="section-icon purple">♫</span><span class="section-label">NOW PLAYING TOGETHER</span></div><span class="count-badge music-pill">♫ LIVE AUDIO</span></div>
-          <div class="music-main"><div class="album-cover"><span>♫</span><div class="album-rings"></div></div><div class="track-details"><span class="tiny-label">ROOM RADIO</span><h3 id="trackTitle">Nothing on the decks yet</h3><p id="trackSubtitle">The host picks the music. Everyone hears it live.</p><div id="musicProgress" class="progress"><div id="musicProgressFill"></div></div><div class="track-timing"><span id="musicElapsed">0:00</span><span id="musicDuration">0:00</span></div></div></div>
-          <div class="music-bottom"><div class="music-controls"><label id="uploadButton" class="btn btn-outline btn-small upload-label" for="audioFile">＋ Choose a song</label><input id="audioFile" type="file" accept="audio/*" hidden /><button id="playMusic" class="btn btn-primary btn-small" disabled>▶ &nbsp; Play</button><button id="stopMusic" class="btn btn-ghost btn-small" disabled>■ Stop</button></div><div class="volume-control"><span class="volume-icon">◖))</span><input id="volume" aria-label="Music volume" type="range" min="0" max="100" value="80" /></div></div>
+          <div class="section-top"><div><span class="section-icon purple">♫</span><span class="section-label">MUSIC</span></div><span class="count-badge music-pill">LIVE</span></div>
           <section class="bot-section" aria-label="Roomwave Music Bot">
-            <div class="device-audio-head"><span>🤖 ROOMWAVE MUSIC BOT</span><span class="count-badge">ROOM DJ</span></div>
-            <p class="bot-intro">Discord-style room music. Upload music you're allowed to broadcast; the bot serves it to everyone, including late joiners. It doesn't use YouTube audio extraction.</p>
-            <div class="bot-now"><div class="bot-symbol">♫</div><div><strong id="botName">Nothing queued yet</strong><p id="botStatus" role="status" aria-live="polite">The host can add an audio file to start.</p><span id="botPosition">0:00</span></div></div>
+            <div class="device-audio-head"><span>🤖 MUSIC BOT</span><span class="count-badge">ROOM DJ</span></div>
+            <p class="bot-intro">Shared music from uploaded files.</p>
+            <div class="bot-now"><div class="bot-symbol">♫</div><div><strong id="botName">Nothing queued yet</strong><p id="botStatus" role="status" aria-live="polite">Add a track to begin.</p><span id="botPosition">0:00</span></div></div>
             <audio id="botAudio" controls preload="metadata" playsinline aria-label="Roomwave music bot playback"></audio>
-            <button class="btn btn-primary btn-small" id="botEnable" type="button" hidden>▶ Enable Bot Audio</button>
+            <button class="btn btn-primary btn-small" id="botEnable" type="button" hidden>▶ Enable sound</button>
             <div id="botControls" hidden>
               <form id="botUploadForm" class="bot-upload">
                 <input id="botUploadFile" type="file" accept=".mp3,.m4a,.ogg,.wav,.webm,.aac,.flac,audio/*" aria-label="Song file to queue"/>
@@ -86,11 +85,11 @@
             </div>
             <h3 class="bot-queue-label">UP NEXT</h3>
             <ol id="botQueue" class="bot-queue"><li>No upcoming songs</li></ol>
-            <p class="bot-footnote">Max 5 tracks per room · 12 MB per track. Songs are held temporarily on Render and deleted when the host leaves or the service restarts. Mobile playback may require tapping Enable Bot Audio; OS background limits still apply.</p>
+            <p class="bot-footnote">Up to 5 tracks, 12 MB each. Files are temporary. Background audio depends on your device.</p>
           </section>
           <section class="youtube-section" aria-label="YouTube watch party">
-            <div class="device-audio-head"><span>▶ YOUTUBE WATCH PARTY</span><span class="count-badge">HOST SYNC</span></div>
-            <p>Everyone can add YouTube videos or songs to the shared queue. The host chooses playback order; every participant watches the original, visible YouTube player.</p>
+            <div class="device-audio-head"><span>▶ YOUTUBE</span><span class="count-badge">HOST SYNC</span></div>
+            <p>Add links. The host controls playback.</p>
             <form id="youtubeForm" class="youtube-form" hidden>
               <input id="youtubeInput" type="text" inputmode="url" placeholder="Paste a YouTube or YouTube Music link" aria-label="YouTube video link" autocomplete="off" />
               <button class="btn btn-primary btn-small" type="submit">＋ Add to queue</button>
@@ -111,17 +110,21 @@
             <div id="youtubeActions" class="youtube-actions" hidden>
               <div id="youtubeTitle" class="youtube-video-title">No YouTube video selected</div>
               <div class="youtube-buttons">
-                <button id="youtubePlay" class="btn btn-primary btn-small" type="button" hidden>▶ Play for room</button>
+                <button id="youtubePlay" class="btn btn-primary btn-small" type="button" hidden>▶ Play</button>
                 <button id="youtubePause" class="btn btn-outline btn-small" type="button" hidden>Ⅱ Pause</button>
                 <button id="youtubeSync" class="btn btn-ghost btn-small" type="button" hidden>↻ Sync now</button>
                 <button id="youtubeNext" class="btn btn-outline btn-small" type="button" hidden>⏭ Next video</button>
                 <a id="youtubeSource" href="https://www.youtube.com/" target="_blank" rel="noopener noreferrer" hidden>Open on YouTube ↗</a>
               </div>
             </div>
-            <button id="youtubeEnable" class="btn btn-primary btn-small youtube-enable" type="button" hidden>▶ Enable YouTube playback</button>
+            <button id="youtubeEnable" class="btn btn-primary btn-small youtube-enable" type="button" hidden>▶ Enable video</button>
             <p id="youtubeStatus" class="youtube-status" role="status" aria-live="polite">The host can choose a YouTube song or video.</p>
-            <p class="device-audio-help">YouTube ads cannot be removed and its player cannot be used for background audio here. Keep the YouTube player visible. On mobile, tap Play if autoplay is blocked. Some videos disallow embeds or have region restrictions. For ad-free music and compatible lock-screen controls, use Roomwave's local-file player.</p>
+            <p class="device-audio-help">YouTube needs a visible player. Autoplay and ads follow YouTube rules.</p>
           </section>
+          <details class="advanced-audio">
+            <summary>More audio options <span>Radio · Tab audio · Mic</span></summary>
+          <div class="music-main"><div class="album-cover"><span>♫</span><div class="album-rings"></div></div><div class="track-details"><span class="tiny-label">ROOM RADIO</span><h3 id="trackTitle">Nothing on the decks yet</h3><p id="trackSubtitle">The host picks the music. Everyone hears it live.</p><div id="musicProgress" class="progress"><div id="musicProgressFill"></div></div><div class="track-timing"><span id="musicElapsed">0:00</span><span id="musicDuration">0:00</span></div></div></div>
+          <div class="music-bottom"><div class="music-controls"><label id="uploadButton" class="btn btn-outline btn-small upload-label" for="audioFile">＋ Choose a song</label><input id="audioFile" type="file" accept="audio/*" hidden /><button id="playMusic" class="btn btn-primary btn-small" disabled>▶ &nbsp; Play</button><button id="stopMusic" class="btn btn-ghost btn-small" disabled>■ Stop</button></div><div class="volume-control"><span class="volume-icon">◖))</span><input id="volume" aria-label="Music volume" type="range" min="0" max="100" value="80" /></div></div>
           <div class="device-audio-section">
             <div class="device-audio-head"><span>♫ TAB / DEVICE AUDIO</span><span id="sharedAudioCount" class="count-badge">0 SHARING</span></div>
             <p>Broadcast audio from a selected playing browser tab or a supported desktop audio source to everyone in the room.</p>
@@ -131,6 +134,7 @@
           </div>
           <p class="background-audio-note"><strong>Ad-free Room Radio:</strong> Play music files you have permission to share. Start playback once to enable available lock-screen and headset controls on supported devices. Your browser or phone may suspend the stream when the app is closed or in the background.</p>
           <div class="music-notice" id="musicNotice">Only the host can choose a local audio file. Nothing is uploaded to our servers.</div>
+          </details>
           <audio id="musicPlayer" preload="metadata"></audio><audio id="remoteMusic" autoplay playsinline></audio>
           <button id="enableAudio" class="audio-unlock" hidden>🔊 Tap to enable shared sound</button>
         </div>
@@ -143,6 +147,6 @@
       </aside>
     </div>
   </main>
-  <footer class="footer"><span>© 2026 Roomwave · Made for being together.</span><span>Be kind. Share only content you have permission to stream.</span></footer>
+  <footer class="footer"><span>© 2026 Roomwave</span><span>Share only authorized media.</span></footer>
 </body>
 </html>
