@@ -30,6 +30,7 @@ test('sequential automatic next, manual hold, repeat one and shuffle',()=>{
   const q=createYouTubeQueue({now:()=>timestamp,random:n=>n-1});q.setup('BCDEFG');
   for(const id of [a,b,c])assert.equal(q.add('BCDEFG',id,'Host'),true);
   assert.equal(q.snapshot('BCDEFG').youtube.videoId,a);
+  assert.equal(q.setPlayback('BCDEFG',{videoId:a,position:0,playing:true}),true);
   timestamp+=2500;
   assert.equal(q.snapshot('BCDEFG').youtube.position,2.5);
   assert.equal(q.next('BCDEFG',true),true);
