@@ -88,6 +88,11 @@ function createRoomHub({ logger = console } = {}) {
       for (const p of room.participants.values()) if (p.socket !== socket) safeSend(p.socket,payload);
     } else if (type === 'youtube' && session.id === room.hostId) {
       const v = message.youtube;
+      if (v === null) {
+        room.youtube = null;
+        for (const p of room.participants.values()) if (p.socket !== socket) safeSend(p.socket,{type:'youtube',youtube:null});
+        return;
+      }
       if (!v || typeof v !== 'object' || Array.isArray(v)) return;
       if (v.videoId !== null && (typeof v.videoId !== 'string' || !/^[a-zA-Z0-9_-]{11}$/.test(v.videoId))) return;
       if (typeof v.position !== 'number' || !Number.isFinite(v.position) || v.position < 0 || v.position > 86400 || typeof v.playing !== 'boolean') return;
