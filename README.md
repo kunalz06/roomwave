@@ -125,3 +125,13 @@ Roomwave uses the Web Media Session API for its own local music player (and rece
 YouTube's policies prohibit blocking embedded-player advertising or permitting its embedded content to play invisibly/in the background. Use the official YouTube/YouTube Music app for subscription-based features where available. Roomwave does not download YouTube media, intercept ads, separate audio, or create hidden YouTube players.
 
 See `media-session.mjs` and `tests/media-session.test.mjs`.
+
+## Roomwave Music Bot (Discord-style room DJ)
+
+The room host uploads licensed or authorized music files into a temporary, in-memory Render queue. All participants receive the same server-owned playback timeline over /rooms WebSocket. Each client streams the **same audio file from Render over HTTP**, so the host does not need to continuously broadcast a browser tab or establish WebRTC media calls for bot tracks. The bot advances to the next song when the shared timeline reaches the end. Guests joining late load the current audio at the bot's playback position. The host controls Play, Pause, Skip, and Stop.
+
+This is a synchronized server-hosted audio jukebox, not a Discord voice participant or an SFU-based RTP broadcaster. Playback clocks are synchronized approximately; seeking or mobile device autoplay/background restrictions vary by browser. Listeners may need to press Enable Bot Audio. The host must keep the room open; leaving closes the room and deletes its temporary music. Render Free also sleeps/restarts, losing the in-memory queue. For durable always-on playback, use persistent object storage plus a paid media-capable backend.
+
+**Limits and security:** 12 MiB maximum per track, 5 total queued/current tracks per room, 64 MiB global storage cap, 2-hour maximum track duration. Host-only upload uses an unguessable token delivered to the room host WebSocket session and checked on the backend. Audio files are served using unguessable track URLs and HTTP Range support, without extracting YouTube media. The files are transient and are deleted as they finish or the host leaves; the URLs should be treated like temporary share links. The bot applies MIME validation, origin allowlist for uploads, and memory/queue limits, but it does not scan uploaded content or validate media magic bytes. Only upload files you own or have permission to rebroadcast.
+
+YouTube watch parties remain separate, use official visible embeds, and retain YouTube ads. Music Bot does not fetch, download, transform, or stream YouTube audio.
