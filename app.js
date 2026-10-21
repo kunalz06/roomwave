@@ -3,6 +3,7 @@ import {
   hostPeerId, isValidPeerId, formatTime, peerOptionsFromEndpoint
 } from './room-utils.mjs';
 import { displayAudioOptions, hasLiveAudio } from './media-utils.mjs';
+import { parseYouTubeId, normalizeYouTubeState } from './youtube-utils.mjs';
 
 const $ = (id) => document.getElementById(id);
 const LIMIT = 8;
@@ -16,6 +17,7 @@ const state = {
   musicCalls: new Map(), incomingMusicCall: null, trackObjectURL: null,
   track: { title: '', duration: 0, position: 0, playing: false, stamped: 0 },
   joinTimeout: null, setupTimeout: null, warmupAbort: null, connectAttempt: 0,
+  youtube: null, youtubePlayer: null, youtubeReady: false, youtubeEnabled: false, youtubeGeneration: 0,
   countMessages: 0, toastTimeout: null
 };
 
@@ -70,6 +72,7 @@ function resetRoom() {
   state.joinTimeout = null;
   stopSharing();
   stopDeviceAudio();
+  clearYouTube();
   for (const call of state.incomingDeviceAudioCalls.values()) { try { call.close(); } catch {} }
   state.incomingDeviceAudioCalls.clear();
   for (const audio of state.deviceAudioPlayers.values()) { audio.pause(); audio.srcObject = null; audio.remove(); }
@@ -221,6 +224,7 @@ function displayRoom() {
   renderScreens();
   renderMusic();
   renderDeviceAudio();
+  renderYouTube();
 }
 function openRoomSocket(attempt, endpoint) {
   if (attempt !== state.connectAttempt || !state.peer?.id) return;
@@ -289,6 +293,7 @@ function onRoomMessage(data) {
     clearTimeout(state.setupTimeout);
     state.setupTimeout = null;
     displayRoom();
+    setYouTubeState(data.youtube);
   } else if (data.type==='roster') {
     applyRoster(data.members);
   } else if (data.type==='chat' && state.joined) {
@@ -299,6 +304,8 @@ function onRoomMessage(data) {
     state.track={title:String(t.title??'').slice(0,120),duration:validNumber(t.duration),
       position:validNumber(t.position),playing:Boolean(t.playing),stamped:Date.now()};
     renderMusic();
+  } else if (data.type==='youtube' && !state.hosting && state.joined) {
+    setYouTubeState(data.youtube);
   } else if (data.type==='room-closed') {
     connectionFailed('The host left. This room is now closed.');
   } else if (data.type==='error') {
@@ -312,6 +319,192 @@ function onRoomMessage(data) {
     connectionFailed(messages[data.reason] || 'Could not join that room. Please retry.');
   }
 }
+
+let youtubeApiPromise = null;
+function youtubeAPI() {
+  if (window.YT?.Player) return Promise.resolve(window.YT);
+  if (youtubeApiPromise) return youtubeApiPromise;
+  youtubeApiPromise = new Promise((resolve, reject) => {
+    const prior = window.onYouTubeIframeAPIReady;
+    const timeout = setTimeout(() => { youtubeApiPromise=null; reject(new Error('YouTube player timed out')); }, 20000);
+    window.onYouTubeIframeAPIReady = () => {
+      clearTimeout(timeout);
+      if (typeof prior === 'function') try { prior(); } catch {}
+      resolve(window.YT);
+    };
+    const script = document.createElement('script');
+    script.src = 'https://www.youtube.com/iframe_api';
+    script.async = true;
+    script.onerror = () => {
+      clearTimeout(timeout);
+      youtubeApiPromise=null;
+      reject(new Error('Cannot load YouTube player'));
+    };
+    document.head.append(script);
+  });
+  return youtubeApiPromise;
+}
+function clearYouTube() {
+  state.youtubeGeneration++;
+  const previous = state.youtubePlayer;
+  state.youtubePlayer = null;
+  state.youtubeReady = false;
+  state.youtube = null;
+  state.youtubeEnabled = false;
+  try { previous?.destroy(); } catch {}
+  $('youtubePlayerHolder').replaceChildren();
+  $('youtubeEnable').hidden = true;
+}
+function youtubeVisible() {
+  const el = $('youtubePlayerHolder');
+  if (document.visibilityState === 'hidden') return false;
+  const rect = el.getBoundingClientRect();
+  const height = Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0);
+  return rect.height > 0 && height / rect.height >= 0.5;
+}
+function renderYouTube() {
+  if (!state.joined) return;
+  const selected = Boolean(state.youtube);
+  $('youtubeForm').hidden = !state.hosting;
+  $('youtubeClear').hidden = !state.hosting || !selected;
+  $('youtubePlayerHolder').hidden = !selected;
+  $('youtubeEmpty').hidden = selected;
+  $('youtubeActions').hidden = !selected;
+  $('youtubePlay').hidden = !state.hosting;
+  $('youtubePause').hidden = !state.hosting;
+  $('youtubeSync').hidden = !state.hosting;
+  $('youtubeTitle').textContent = selected
+    ? (state.youtube.playing ? 'Playing together on YouTube' : 'YouTube video is ready')
+    : 'No YouTube video selected';
+  $('youtubeSource').hidden = !selected;
+  if (selected) $('youtubeSource').href = 'https://www.youtube.com/watch?v=' + state.youtube.videoId;
+  $('youtubeEnable').hidden = !selected || state.hosting || !state.youtube.playing || state.youtubeEnabled;
+  $('youtubeStatus').textContent = !selected
+    ? (state.hosting ? 'Paste a YouTube link to share a song or video with the room.' : 'The host can choose a YouTube song or video.')
+    : (!state.hosting && state.youtube.playing && !state.youtubeEnabled
+      ? 'Press Enable playback to listen. If your browser blocks playback, press Play inside YouTube.'
+      : (state.youtube.playing ? 'Host playback is live. Playback is synchronized approximately.' : 'Waiting for the host to play.'));
+}
+function youtubePosition() {
+  try {
+    const value = state.youtubePlayer?.getCurrentTime?.();
+    if (Number.isFinite(value) && value >= 0) return Math.min(86400, value);
+  } catch {}
+  return state.youtube?.position ?? 0;
+}
+function broadcastYouTube() {
+  if (!state.hosting || !state.joined || !state.youtube) return;
+  state.youtube.position = youtubePosition();
+  broadcast({type:'youtube', youtube:{...state.youtube}});
+  renderYouTube();
+}
+function syncYouTubePlayer() {
+  if (!state.joined || !state.youtube || !state.youtubePlayer || !state.youtubeReady) return;
+  const player = state.youtubePlayer;
+  const diff = Math.abs(youtubePosition() - state.youtube.position);
+  try {
+    if (diff > 2.5) player.seekTo(state.youtube.position, true);
+    if (!state.youtube.playing) {
+      player.pauseVideo();
+    } else if (!state.hosting && state.youtubeEnabled && youtubeVisible()) {
+      player.playVideo();
+    } else if (!state.hosting) {
+      $('youtubeEnable').hidden = false;
+    }
+  } catch {}
+}
+function mountYouTube() {
+  const video = state.youtube?.videoId;
+  if (!video || !state.joined) return;
+  const generation = ++state.youtubeGeneration;
+  state.youtubeReady = false;
+  const old = state.youtubePlayer;
+  state.youtubePlayer = null;
+  try { old?.destroy(); } catch {}
+  $('youtubePlayerHolder').replaceChildren();
+  const slot = document.createElement('div');
+  slot.id = 'youtubePlayerSlot';
+  $('youtubePlayerHolder').append(slot);
+  youtubeAPI().then(YT => {
+    if (generation !== state.youtubeGeneration || !state.joined || state.youtube?.videoId !== video) return;
+    state.youtubePlayer = new YT.Player(slot, {
+      videoId: video,
+      playerVars: {playsinline:1, controls:1, origin:location.origin},
+      events: {
+        onReady: () => {
+          if (generation !== state.youtubeGeneration) return;
+          state.youtubeReady = true;
+          syncYouTubePlayer();
+        },
+        onStateChange: (event) => {
+          if (generation !== state.youtubeGeneration || !state.youtube) return;
+          if (!state.hosting) {
+            if (event.data === YT.PlayerState.PLAYING) {
+              state.youtubeEnabled = true;
+              $('youtubeEnable').hidden = true;
+            }
+            return;
+          }
+          if (event.data === YT.PlayerState.PLAYING || event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.ENDED) {
+            state.youtube.playing = event.data === YT.PlayerState.PLAYING;
+            broadcastYouTube();
+          }
+        },
+        onAutoplayBlocked: () => {
+          if (!state.hosting) $('youtubeEnable').hidden = false;
+          $('youtubeStatus').textContent = 'Your browser blocked automatic playback. Click Play inside the YouTube player.';
+        },
+        onError: () => {
+          $('youtubeStatus').textContent = 'This video cannot be embedded or is unavailable. Try another link.';
+        }
+      }
+    });
+  }).catch(() => {
+    if (generation === state.youtubeGeneration) $('youtubeStatus').textContent = 'YouTube could not load. Check your browser or content-blocking settings.';
+  });
+}
+function setYouTubeState(value) {
+  const normalized = normalizeYouTubeState(value);
+  const previousId = state.youtube?.videoId;
+  state.youtube = normalized;
+  if (!normalized) {
+    state.youtubeGeneration++;
+    try { state.youtubePlayer?.destroy(); } catch {}
+    state.youtubePlayer = null;
+    state.youtubeReady = false;
+    state.youtubeEnabled = false;
+    $('youtubePlayerHolder').replaceChildren();
+  } else if (previousId !== normalized.videoId) {
+    state.youtubeEnabled = false;
+    mountYouTube();
+  } else if (!state.hosting) {
+    syncYouTubePlayer();
+  }
+  renderYouTube();
+}
+function setYouTubeFromForm(event) {
+  event.preventDefault();
+  if (!state.hosting || !state.joined) return;
+  const id = parseYouTubeId($('youtubeInput').value);
+  if (!id) {
+    notify('Paste a YouTube video, Shorts, or music.youtube.com watch link (not a playlist-only link).');
+    return;
+  }
+  setYouTubeState({videoId:id,position:0,playing:false});
+  broadcastYouTube();
+}
+function hostYouTubeAction(action) {
+  if (!state.hosting || !state.youtube || !state.youtubeReady) {
+    notify('YouTube is loading. You can also use the player controls.');
+    return;
+  }
+  try {
+    if (action === 'play') state.youtubePlayer.playVideo();
+    if (action === 'pause') state.youtubePlayer.pauseVideo();
+    if (action === 'sync') broadcastYouTube();
+  } catch { notify('Use the YouTube player controls to start or pause.'); }
+}
+
 function validNumber(n) { return typeof n === 'number' && Number.isFinite(n) && n >= 0 ? Math.min(n,86400) : 0; }
 function renderPeople() {
   if (!state.joined) return;
@@ -634,6 +827,26 @@ async function copyInvite() {
   try{await navigator.clipboard.writeText(url);notify('Invite link copied! Send it to your friends.');}
   catch{try{window.prompt('Copy your invite link:',url);}catch{notify(`Room code: ${state.code}`);}}
 }
+$('youtubeForm').addEventListener('submit', setYouTubeFromForm);
+$('youtubeClear').addEventListener('click',()=>{
+  if (!state.hosting || !state.joined) return;
+  setYouTubeState(null);
+  broadcast({type:'youtube',youtube:null});
+});
+$('youtubePlay').addEventListener('click',()=>hostYouTubeAction('play'));
+$('youtubePause').addEventListener('click',()=>hostYouTubeAction('pause'));
+$('youtubeSync').addEventListener('click',()=>hostYouTubeAction('sync'));
+$('youtubeEnable').addEventListener('click',()=>{
+  if (!state.youtube || !youtubeVisible()) {
+    $('youtubePlayerHolder').scrollIntoView({behavior:'smooth',block:'center'});
+    notify('Tap Play inside the visible YouTube player to allow sound.');
+    return;
+  }
+  state.youtubeEnabled = true;
+  if (state.youtubeReady) syncYouTubePlayer();
+  else notify('YouTube is loading. Tap Play inside its player once ready.');
+  renderYouTube();
+});
 $('createRoom').addEventListener('click',()=>enterRoom(true,makeCode()));
 $('cancelConnection').addEventListener('click', () => resetRoom());
 $('joinRoom').addEventListener('click',()=>{
@@ -681,6 +894,10 @@ $('enableAudio').addEventListener('click',async()=>{
 setInterval(()=>{
   if(!state.joined)return;
   renderMusic();
+  if (state.hosting && state.youtube?.playing && state.youtubeReady && Date.now() - (state.youtubeLastSync || 0) > 5000) {
+    state.youtubeLastSync = Date.now();
+    broadcastYouTube();
+  }
   if(state.hosting && state.track.title && !$('musicPlayer').paused) {
     const currentSecond=Math.floor($('musicPlayer').currentTime);
     if(currentSecond>0 && currentSecond%3===0 && state._lastSentSecond!==currentSecond) {state._lastSentSecond=currentSecond;sendMusic();}
