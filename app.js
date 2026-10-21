@@ -3,7 +3,7 @@ import {
   hostPeerId, isValidPeerId, formatTime, peerOptionsFromEndpoint
 } from './room-utils.mjs';
 import { displayAudioOptions, hasLiveAudio } from './media-utils.mjs';
-import { parseYouTubeId, normalizeYouTubeState } from './youtube-utils.mjs';
+import { parseYouTubeId, normalizeYouTubeState, expectedYouTubePosition } from './youtube-utils.mjs';
 import { attachRoomwaveMediaSession } from './media-session.mjs';
 
 const $ = (id) => document.getElementById(id);
@@ -19,7 +19,7 @@ const state = {
   track: { title: '', duration: 0, position: 0, playing: false, stamped: 0 },
   joinTimeout: null, setupTimeout: null, warmupAbort: null, connectAttempt: 0,
   youtube: null, youtubePlayer: null, youtubeReady: false, youtubeEnabled: false, youtubeGeneration: 0,
-  youtubeQueue: [], youtubeMode: 'sequential',
+  youtubeQueue: [], youtubeMode: 'sequential', youtubeReceivedAt: 0,
   bot: null, botToken: '', botReceivedAt: 0, botAudioEnabled: false, botUploading: false,
   countMessages: 0, toastTimeout: null
 };
@@ -398,6 +398,7 @@ function clearYouTube() {
   state.youtubeEnabled = false;
   state.youtubeQueue = [];
   state.youtubeMode = 'sequential';
+  state.youtubeReceivedAt = 0;
   try { previous?.destroy(); } catch {}
   $('youtubePlayerHolder').replaceChildren();
   $('youtubeEnable').hidden = true;
@@ -428,10 +429,16 @@ function renderYouTubeQueue() {
     title.textContent=(i+1)+'. '+item.videoId;
     const added=document.createElement('small');added.textContent='Added by '+String(item.by||'Guest').slice(0,24);
     info.append(title,added);
+    const thumb=document.createElement('img');
+    thumb.className='youtube-queue-thumbnail';
+    thumb.width=72;thumb.height=54;
+    thumb.loading='lazy';
+    thumb.alt='';
+    thumb.src='https://i.ytimg.com/vi/'+item.videoId+'/default.jpg';
     const link=document.createElement('a');
     link.href='https://www.youtube.com/watch?v='+item.videoId;
     link.target='_blank';link.rel='noopener noreferrer';link.textContent='YouTube ↗';
-    li.append(info,link);
+    li.append(thumb,info,link);
     if(state.hosting && typeof item.id==='string') {
       const actions=document.createElement('div');actions.className='youtube-queue-actions';
       for(const [label,action,disabled] of [
@@ -499,13 +506,14 @@ function broadcastYouTube() {
 function syncYouTubePlayer() {
   if (!state.joined || !state.youtube || !state.youtubePlayer || !state.youtubeReady) return;
   const player = state.youtubePlayer;
-  const diff = Math.abs(youtubePosition() - state.youtube.position);
+  const target = expectedYouTubePosition(state.youtube, state.youtubeReceivedAt);
+  const diff = Math.abs(youtubePosition() - target);
   try {
-    if (diff > 2.5) player.seekTo(state.youtube.position, true);
+    if (diff > 2.5) player.seekTo(target, true);
     if (!state.youtube.playing) {
       player.pauseVideo();
     } else if (!state.hosting && state.youtubeEnabled && youtubeVisible()) {
-      player.playVideo();
+      if(player.getPlayerState?.() !== window.YT?.PlayerState?.PLAYING) player.playVideo();
     } else if (!state.hosting) {
       $('youtubeEnable').hidden = false;
     }
@@ -569,7 +577,14 @@ function mountYouTube() {
           }
         },
         onAutoplayBlocked: () => {
-          if (!state.hosting) $('youtubeEnable').hidden = false;
+          if (!state.hosting) {
+            state.youtubeEnabled = false;
+            $('youtubeEnable').hidden = false;
+          } else if (state.youtube?.playing) {
+            // A server clock must not advance while the host cannot start playback.
+            state.youtube.playing = false;
+            broadcastYouTube();
+          }
           $('youtubeStatus').textContent = 'Your browser blocked automatic playback. Click Play inside the YouTube player.';
         },
         onError: () => {
@@ -591,6 +606,7 @@ function setYouTubeState(value) {
     try {state.youtubePlayer.seekTo(0,true);state.youtubePlayer.playVideo();} catch {}
   }
   state.youtube = normalized;
+  state.youtubeReceivedAt = Date.now();
   if (!normalized) {
     state.youtubeGeneration++;
     try { state.youtubePlayer?.destroy(); } catch {}
