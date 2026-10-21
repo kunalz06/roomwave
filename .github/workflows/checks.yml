@@ -17,6 +17,8 @@ jobs:
           node --check youtube-utils.mjs
           node --check backend/rooms.cjs
           node --check backend/music-bot.cjs
+          node --check backend/youtube-queue.cjs
+          node --check service-worker.js
           node --check backend/server.cjs
       - name: Frontend unit tests
         run: npm test
