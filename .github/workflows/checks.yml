@@ -1,0 +1,23 @@
+name: Roomwave checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  node-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check
+        run: |
+          npm run check
+          node --check youtube-utils.mjs
+          node --check backend/rooms.cjs
+          node --check backend/server.cjs
+      - name: Frontend unit tests
+        run: npm test
+      - name: Room backend unit tests
+        run: node --test backend/tests/*.test.cjs
