@@ -151,3 +151,9 @@ The queue is transmitted to new guests on room join and refreshed to existing me
 Roomwave now has an installable web app manifest and an app-shell service worker. On supported browsers, use the Install app button or **Add to Home Screen**; on iOS, use Safari's Share > Add to Home Screen. The worker only caches the frontend shell for offline loading; it does not run WebRTC or room WebSockets after the app has been stopped.
 
 You can often keep Roomwave open and hear its **own authorized music bot/local audio** while switching apps, depending on platform media policies. The Media Session API provides lock-screen transport controls where supported. However **no browser-only app can guarantee a persistent live room or media stream after the browser is force-closed, the tab is cleared, or mobile OS suspends the page**. YouTube always requires a visible embedded player and is paused when hidden or scrolled out of view. A native client with an OS-approved background audio service is required for more dependable background music.
+
+### October 21 queue and PWA refinements
+
+The first submitted YouTube link automatically becomes the currently selected video with playback requested, subject to the visible YouTube iframe and each browser's autoplay rules. Further links form the up-next queue. Playback position now accounts for elapsed time between server messages so periodic synchronization doesn't repeatedly seek guests backward. If YouTube blocks the host's autoplay, the host's room playback state is paused until they start playback manually. Queue entries show YouTube thumbnails.
+
+Android installation includes PNG icons at 192 and 512 px; on iOS, use Add to Home Screen. The service worker caches only app-shell files. Neither installation nor the service worker creates a persistent background media connection after a browser or OS kills the page.
