@@ -33,7 +33,7 @@ test('host departure closes the room and rejects later joins', () => {
   const hub=createRoomHub();
   const host=participant(hub,'create','BCDEFG','roomwave-host-BCDEFG','Host');
   const guest=participant(hub,'join','BCDEFG','guest-123','Guest');
-  host.close();
+  host.push({type:'leave'});
   assert.equal(guest.last('room-closed').type,'room-closed');
   const third=participant(hub,'join','BCDEFG','guest-456','Third');
   assert.equal(third.last('error').reason,'room-not-found');
@@ -97,3 +97,31 @@ test('rejects invalid YouTube state and queue IDs', () => {
   assert.equal(hub.youtubeQueue.snapshot('BCDEFG').youtube,null);
   assert.equal(hub.youtubeQueue.snapshot('BCDEFG').queue.length,0);
 });
+
+test('temporary host and guest disconnects resume securely without losing the room',()=>{
+  const hub=createRoomHub();
+  const host=participant(hub,'create','BCDEFG','roomwave-host-BCDEFG','Host');
+  const guest=participant(hub,'join','BCDEFG','guest-123','Guest');
+  const hostToken=host.last('created').resumeToken;
+  const guestToken=guest.last('joined').resumeToken;
+  assert.match(hostToken,/^[a-f0-9]{48}$/);
+  guest.push({type:'youtube-add',videoId:'M7lc1UVf-VE'});
+  host.close();
+  assert.equal(hub.rooms.size,1);
+  assert.equal(guest.last('room-closed'),undefined);
+  const attacker=participant(hub,'resume','BCDEFG','roomwave-host-BCDEFG','Imposter');
+  assert.equal(attacker.last('error').reason,'invalid-resume');
+  const hostBack=participantResume(hub,'BCDEFG','roomwave-host-BCDEFG',hostToken);
+  assert.equal(hostBack.last('resumed').youtube.videoId,'M7lc1UVf-VE');
+  assert.equal(hostBack.last('resumed').botToken,host.last('created').botToken);
+  guest.close();
+  const guestBack=participantResume(hub,'BCDEFG','guest-123',guestToken);
+  assert.equal(guestBack.last('resumed').members.length,2);
+  assert.equal(guestBack.last('resumed').botToken,undefined);
+  hostBack.push({type:'leave'});
+  assert.equal(guestBack.last('room-closed').type,'room-closed');
+});
+function participantResume(hub,code,id,resumeToken){
+  const s=new Socket();hub.connected(s);s.push({type:'resume',code,peerId:id,resumeToken});
+  return s;
+}
