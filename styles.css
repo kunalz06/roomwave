@@ -32,3 +32,6 @@
 .youtube-enable{margin:8px 0}
 .youtube-status{font-size:12px!important}
 @media(max-width:640px){.youtube-section{padding:12px}.youtube-form button{flex:1 0 auto}.youtube-player{min-height:200px}}
+
+.background-audio-note{margin:10px 0 6px;padding:11px 12px;border:1px solid var(--border);border-radius:12px;color:var(--muted);font-size:12px;line-height:1.65;background:rgba(255,255,255,.025)}
+.background-audio-note strong{color:var(--ink)}
