@@ -115,3 +115,13 @@ The host can paste a YouTube watch, Shorts, live or YouTube Music watch URL into
 * Roomwave leaves YouTube player branding, controls, and advertisements intact, and does not strip or transmit its audio/video.
 
 YouTube remains a separate mode alongside screen sharing, authorized live tab/device audio capture, and host-provided local audio files.
+
+## Ad-free authorized audio and OS media controls
+
+Roomwave's host-controlled local music files are not sourced from YouTube and have no Roomwave-inserted advertisements. You must have permission to stream the files to other participants.
+
+Roomwave uses the Web Media Session API for its own local music player (and received host music streams, when available): lock-screen and system media Play/Pause controls, with seeking for the host's local file only. It does **not** modify embedded YouTube playback or advertisements. Browser/OS support varies; device sleep, closing the browser, iOS backgrounding, and suspended WebRTC connections can prevent continued background listening. The app cannot guarantee uninterrupted background playback.
+
+YouTube's policies prohibit blocking embedded-player advertising or permitting its embedded content to play invisibly/in the background. Use the official YouTube/YouTube Music app for subscription-based features where available. Roomwave does not download YouTube media, intercept ads, separate audio, or create hidden YouTube players.
+
+See `media-session.mjs` and `tests/media-session.test.mjs`.
