@@ -21,7 +21,7 @@ const state = {
   youtube: null, youtubePlayer: null, youtubeReady: false, youtubeEnabled: false, youtubeGeneration: 0,
   youtubeQueue: [], youtubeMode: 'sequential', youtubeReceivedAt: 0,
   bot: null, botToken: '', botReceivedAt: 0, botAudioEnabled: false, botUploading: false,
-  resumeToken: '', recovering: false, reconnectTimer: null, reconnectAttempts: 0, connectionOfflineAt: 0,
+  resumeToken: '', resumePeerId: '', recovering: false, reconnectTimer: null, reconnectAttempts: 0, connectionOfflineAt: 0,
   botPlayPending: false, countMessages: 0, toastTimeout: null
 };
 
@@ -84,6 +84,24 @@ function broadcast(data) {
   if (state.roomSocket?.readyState !== WebSocket.OPEN) return false;
   try { state.roomSocket.send(JSON.stringify(data)); return true; } catch { return false; }
 }
+function cachedRoom() {
+  try {
+    const value=JSON.parse(sessionStorage.getItem('roomwave:active')||'null');
+    return value && isValidRoomCode(value.code) && isValidPeerId(value.peerId) &&
+      typeof value.token==='string' && /^[0-9a-f]{48}$/.test(value.token) ? value:null;
+  } catch {return null;}
+}
+function saveRoomSession() {
+  if(!state.resumeToken || !isValidPeerId(myId()))return;
+  try {
+    sessionStorage.setItem('roomwave:active',JSON.stringify({
+      code:state.code,peerId:myId(),hosting:state.hosting,token:state.resumeToken
+    }));
+  } catch {}
+}
+function clearRoomSession() {
+  try{sessionStorage.removeItem('roomwave:active');}catch{}
+}
 function initIdentity() {
   state.name = cleanName($('displayName').value);
   $('displayName').value = state.name;
@@ -94,6 +112,7 @@ function resetRoom(intentional = false) {
   clearTimeout(state.reconnectTimer);
   state.reconnectTimer=null;state.resumeToken='';state.recovering=false;
   state.reconnectAttempts=0;state.connectionOfflineAt=0;
+  clearRoomSession();
   ++state.connectAttempt; // Invalidates any outstanding free-tier wakeup promise.
   state.warmupAbort?.abort();
   state.warmupAbort = null;
@@ -188,8 +207,13 @@ async function enterRoom(isHost, code) {
   if (attempt !== state.connectAttempt) return;
   state.code = code;
   state.hosting = isHost;
+  const cached=cachedRoom();
+  if(cached && cached.code===code && cached.hosting===isHost){
+    state.resumeToken=cached.token;
+    state.resumePeerId=cached.peerId;
+  }
   state.members.set(isHost ? peerHost() : '__pending__', state.name);
-  const chosenId = isHost ? peerHost() : undefined;
+  const chosenId=isHost?peerHost():(isValidPeerId(state.resumePeerId)?state.resumePeerId:undefined);
   let peer;
   try { peer = new window.Peer(chosenId, peerOptions); }
   catch {
@@ -367,6 +391,7 @@ function onRoomMessage(data) {
     if(data.code!==state.code || (state.joined && data.type!=='resumed'))return;
     const wasJoined=state.joined;
     state.resumeToken=typeof data.resumeToken==='string'?data.resumeToken:state.resumeToken;
+    saveRoomSession();
     state.reconnectAttempts=0;state.connectionOfflineAt=0;
     clearTimeout(state.reconnectTimer);state.reconnectTimer=null;
     setConnectionBanner('');
@@ -406,6 +431,13 @@ function onRoomMessage(data) {
   } else if (data.type==='room-closed') {
     connectionFailed('This room has ended.');
   } else if (data.type==='error') {
+    if(data.reason==='room-not-found' && state.hosting && state.resumeToken && !state.joined){
+      state.resumeToken='';state.resumePeerId='';clearRoomSession();
+      const old=state.roomSocket;state.roomSocket=null;
+      try{old?.close();}catch{}
+      openRoomSocket(state.connectAttempt,String(window.ROOMWAVE_SIGNALING_URL||'').trim());
+      return;
+    }
     const messages = {
       'room-not-found':'Room not found. Ask the host for a new invite link.',
       'room-full':'That room is full (maximum 8 people).',
@@ -1288,7 +1320,18 @@ setInterval(()=>{
 },500);
 try{$('displayName').value=localStorage.getItem('roomwave:name')||'';}catch{}
 const queryRoom=normalizeRoomCode(new URLSearchParams(location.search).get('room'));
-if(isValidRoomCode(queryRoom))$('roomCodeInput').value=queryRoom;
+if(isValidRoomCode(queryRoom)){
+  $('roomCodeInput').value=queryRoom;
+  const cached=cachedRoom();
+  if(cached?.code===queryRoom){
+    if(cached.hosting)state.resumePeerId=cached.peerId;
+    setTimeout(()=>enterRoom(Boolean(cached.hosting),queryRoom),0);
+  } else {
+    let name='';
+    try{name=localStorage.getItem('roomwave:name')||'';}catch{}
+    if(name.trim())setTimeout(()=>enterRoom(false,queryRoom),0);
+  }
+}
 document.addEventListener('visibilitychange', pauseYouTubeWhenInvisible);
 window.addEventListener('scroll', pauseYouTubeWhenInvisible, { passive: true });
 window.addEventListener('resize', pauseYouTubeWhenInvisible);
