@@ -237,16 +237,16 @@ async function enterRoom(isHost, code) {
   });
   peer.on('call', acceptCall);
   peer.on('disconnected', () => {
-    if (state.peer !== peer) return;
-    if (!state.joined) {
-      connectionFailed('Lost the connection to the room server. Please retry.');
-      return;
-    }
-    notify('Room server disconnected. Attempting to reconnect…');
-    try { peer.reconnect(); } catch { /* Room may reconnect automatically. */ }
+    if(state.peer!==peer)return;
+    // PeerJS is for screen and microphone media. A transient media failure
+    // should not destroy the separate WebSocket room, chat or hosted Music Bot.
+    try{peer.reconnect();}catch{}
+    if(state.joined)notify('Reconnecting screen/audio sharing…');
   });
   peer.on('close', () => {
-    if (state.peer === peer) connectionFailed('Room connection ended. Please create or join a room again.');
+    if(state.peer!==peer)return;
+    if(!state.joined)connectionFailed('Could not connect. Retry.');
+    else notify('Screen sharing disconnected. Room chat and Music Bot remain available.');
   });
   peer.on('error', (error) => {
     if (state.peer !== peer) return;
