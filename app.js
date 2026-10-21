@@ -4,6 +4,7 @@ import {
 } from './room-utils.mjs';
 import { displayAudioOptions, hasLiveAudio } from './media-utils.mjs';
 import { parseYouTubeId, normalizeYouTubeState } from './youtube-utils.mjs';
+import { attachRoomwaveMediaSession } from './media-session.mjs';
 
 const $ = (id) => document.getElementById(id);
 const LIMIT = 8;
@@ -21,6 +22,29 @@ const state = {
   countMessages: 0, toastTimeout: null
 };
 
+let audioSessionController = null;
+function clearAudioSession() {
+  try { audioSessionController?.dispose(); } catch {}
+  audioSessionController = null;
+}
+function registerAudioSession(media, title, seekable) {
+  if (!navigator.mediaSession || !media) return;
+  clearAudioSession();
+  audioSessionController = attachRoomwaveMediaSession({
+    session: navigator.mediaSession,
+    Metadata: window.MediaMetadata,
+    media, title: title || 'Roomwave shared audio',
+    artist: seekable ? 'Roomwave Room Radio' : 'Roomwave live room',
+    seekable,
+    onPlay: seekable ? async () => {
+      try { await state.audioContext?.resume(); } catch {}
+      return media.play();
+    } : null
+  });
+}
+function refreshAudioSession() {
+  try { audioSessionController?.refresh(); } catch {}
+}
 function notify(message) {
   const element = $('toast');
   element.textContent = message;
@@ -73,6 +97,7 @@ function resetRoom() {
   stopSharing();
   stopDeviceAudio();
   clearYouTube();
+  clearAudioSession();
   for (const call of state.incomingDeviceAudioCalls.values()) { try { call.close(); } catch {} }
   state.incomingDeviceAudioCalls.clear();
   for (const audio of state.deviceAudioPlayers.values()) { audio.pause(); audio.srcObject = null; audio.remove(); }
@@ -303,6 +328,10 @@ function onRoomMessage(data) {
     const t=data.track;
     state.track={title:String(t.title??'').slice(0,120),duration:validNumber(t.duration),
       position:validNumber(t.position),playing:Boolean(t.playing),stamped:Date.now()};
+    if ($('remoteMusic').srcObject && audioSessionController) {
+      audioSessionController.setTitle(state.track.title || 'Host shared music');
+      refreshAudioSession();
+    }
     renderMusic();
   } else if (data.type==='youtube' && !state.hosting && state.joined) {
     setYouTubeState(data.youtube);
@@ -565,12 +594,13 @@ function acceptCall(call) {
     state.incomingMusicCall = call;
     call.on('stream', stream => {
       const audio = $('remoteMusic'); audio.srcObject = stream;
+      registerAudioSession(audio, state.track.title || 'Host shared music', false);
       audio.volume = Number($('volume').value)/100;
       audio.play().then(() => { $('enableAudio').hidden = true; })
         .catch(() => { $('enableAudio').hidden = false; });
     });
     call.on('close', () => {
-      if (state.incomingMusicCall === call) { $('remoteMusic').srcObject=null; state.incomingMusicCall=null; }
+      if (state.incomingMusicCall === call) { clearAudioSession(); $('remoteMusic').srcObject=null; state.incomingMusicCall=null; }
     });
   }
 }
@@ -767,7 +797,7 @@ function currentTrack() {
   return { title:state.track.title, duration:validNumber(player.duration),
     position:validNumber(player.currentTime), playing:!player.paused && !player.ended };
 }
-function sendMusic() {if(state.hosting && state.joined){state.track={...currentTrack(),stamped:Date.now()};broadcast({type:'music',track:currentTrack()});renderMusic();}}
+function sendMusic() {if(state.hosting && state.joined){state.track={...currentTrack(),stamped:Date.now()};broadcast({type:'music',track:currentTrack()});renderMusic();refreshAudioSession();}}
 function renderMusic() {
   if (!state.joined) return;
   const t=state.hosting?{...currentTrack(),stamped:Date.now()}:state.track;
@@ -795,6 +825,7 @@ async function chooseAudio(file) {
   $('musicPlayer').load();
   state.track.title=file.name.replace(/\.[^.]+$/,'').slice(0,120);
   state.track.duration=0;
+  registerAudioSession($('musicPlayer'), state.track.title, true);
   for (const id of otherMembers()) sendMusicTo(id);
   sendMusic();
   notify(`“${state.track.title}” is ready to play.`);
@@ -885,6 +916,7 @@ $('chatForm').addEventListener('submit',e=>{
 $('enableAudio').addEventListener('click',async()=>{
   const players = [$('remoteMusic'), ...state.deviceAudioPlayers.values()].filter(a => a.srcObject);
   const results = await Promise.allSettled(players.map(audio => audio.play()));
+  refreshAudioSession();
   if (results.some(result => result.status === 'rejected')) {
     notify('Sound is still blocked. Allow audio playback in your browser settings.');
   } else {
