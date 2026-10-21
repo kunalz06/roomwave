@@ -102,3 +102,16 @@ Listeners—including mobile browser users—can hear the shared stream when Web
 - **iOS / Android browser:** capturing audio playing in another app via `getDisplayMedia()` is generally unsupported. Mobile can **listen**; microphone capture is an optional lower-quality fallback and cannot replace internal system audio capture.
 - **Network:** media is WebRTC peer-to-peer, so particularly restrictive networks can require a separately configured TURN relay. Render's free signaling server does not provide TURN.
 - **Rights:** share only sources you have permission to rebroadcast. This does not unlock DRM-protected audio or bypass Spotify's redistribution restrictions.
+## YouTube watch party (songs and videos)
+
+The host can paste a YouTube watch, Shorts, live or YouTube Music watch URL into the **YouTube Watch Party** panel. The official, visible YouTube IFrame player loads the video for each participant. The host can play, pause and seek using YouTube's player or the Roomwave Play/Pause/Sync controls; Render relays the host's position and playback state and new guests receive the current video.
+
+* YouTube playback happens **separately on each viewer's device**, not by screen capture or rebroadcasting any media.
+* The YouTube IFrame Player API needs no API key for known video URLs. Searching YouTube's catalog would require a separate Data API integration.
+* Some videos disallow embedding or have geographic or age restrictions; the player displays its own error, or participants may open the link on YouTube.
+* On mobile browsers and devices with autoplay restrictions, users may have to click **Enable YouTube playback** or Play within the visible YouTube player. Keep the embedded player visible when playing. Do not use it for hidden or background audio-only playback.
+* Playback sync is best effort, corrected periodically. It cannot guarantee sample-accurate synchronization or skip any YouTube advertisements.
+* The backend accepts only a host's YouTube state updates; participant attempts to change the room video are ignored. Room state is ephemeral and disappears when the host leaves or Render restarts.
+* Roomwave leaves YouTube player branding, controls, and advertisements intact, and does not strip or transmit its audio/video.
+
+YouTube remains a separate mode alongside screen sharing, authorized live tab/device audio capture, and host-provided local audio files.
