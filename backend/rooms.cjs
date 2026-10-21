@@ -192,7 +192,7 @@ function createRoomHub({ logger = console } = {}) {
     socket.on('close', () => leave(socket));
     socket.on('error', () => leave(socket));
   }
-  return { rooms, sessions, bot, youtubeQueue, handle, leave, connected };
+  return { rooms, sessions, bot, youtubeQueue, emitYouTube, handle, leave, connected };
 }
 
 function attachRooms(server, { allowedOrigins = [], logger = console } = {}) {
@@ -221,12 +221,7 @@ function attachRooms(server, { allowedOrigins = [], logger = console } = {}) {
   heartbeat.unref?.();
   const botTicker=setInterval(()=>{
     hub.bot.tick();
-    for(const code of hub.youtubeQueue.tick()){
-      hub.youtubeQueue.snapshot(code) && hub.rooms.get(code) &&
-        hub.rooms.get(code).participants.forEach(p=>safeSend(p.socket,{
-          type:'youtube-state',...hub.youtubeQueue.snapshot(code)
-        }));
-    }
+    for(const code of hub.youtubeQueue.tick()) hub.emitYouTube(code);
   },1000);
   botTicker.unref?.();
   wss.on('close', () => {clearInterval(heartbeat);clearInterval(botTicker);});
