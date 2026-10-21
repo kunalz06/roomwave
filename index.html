@@ -61,6 +61,28 @@
           <div class="section-top"><div><span class="section-icon purple">♫</span><span class="section-label">NOW PLAYING TOGETHER</span></div><span class="count-badge music-pill">♫ LIVE AUDIO</span></div>
           <div class="music-main"><div class="album-cover"><span>♫</span><div class="album-rings"></div></div><div class="track-details"><span class="tiny-label">ROOM RADIO</span><h3 id="trackTitle">Nothing on the decks yet</h3><p id="trackSubtitle">The host picks the music. Everyone hears it live.</p><div id="musicProgress" class="progress"><div id="musicProgressFill"></div></div><div class="track-timing"><span id="musicElapsed">0:00</span><span id="musicDuration">0:00</span></div></div></div>
           <div class="music-bottom"><div class="music-controls"><label id="uploadButton" class="btn btn-outline btn-small upload-label" for="audioFile">＋ Choose a song</label><input id="audioFile" type="file" accept="audio/*" hidden /><button id="playMusic" class="btn btn-primary btn-small" disabled>▶ &nbsp; Play</button><button id="stopMusic" class="btn btn-ghost btn-small" disabled>■ Stop</button></div><div class="volume-control"><span class="volume-icon">◖))</span><input id="volume" aria-label="Music volume" type="range" min="0" max="100" value="80" /></div></div>
+          <section class="bot-section" aria-label="Roomwave Music Bot">
+            <div class="device-audio-head"><span>🤖 ROOMWAVE MUSIC BOT</span><span class="count-badge">ROOM DJ</span></div>
+            <p class="bot-intro">Discord-style room music. Upload music you're allowed to broadcast; the bot serves it to everyone, including late joiners. It doesn't use YouTube audio extraction.</p>
+            <div class="bot-now"><div class="bot-symbol">♫</div><div><strong id="botName">Nothing queued yet</strong><p id="botStatus" role="status" aria-live="polite">The host can add an audio file to start.</p><span id="botPosition">0:00</span></div></div>
+            <audio id="botAudio" controls preload="metadata" playsinline aria-label="Roomwave music bot playback"></audio>
+            <button class="btn btn-primary btn-small" id="botEnable" type="button" hidden>▶ Enable Bot Audio</button>
+            <div id="botControls" hidden>
+              <form id="botUploadForm" class="bot-upload">
+                <input id="botUploadFile" type="file" accept=".mp3,.m4a,.ogg,.wav,.webm,.aac,.flac,audio/*" aria-label="Song file to queue"/>
+                <button id="botUploadButton" class="btn btn-outline btn-small" type="submit">＋ Add to queue</button>
+              </form>
+              <div class="bot-actions">
+                <button id="botPlay" class="btn btn-primary btn-small" type="button">▶ Play</button>
+                <button id="botPause" class="btn btn-outline btn-small" type="button">Ⅱ Pause</button>
+                <button id="botSkip" class="btn btn-outline btn-small" type="button">⏭ Skip</button>
+                <button id="botStop" class="btn btn-ghost btn-small" type="button">■ Stop</button>
+              </div>
+            </div>
+            <h3 class="bot-queue-label">UP NEXT</h3>
+            <ol id="botQueue" class="bot-queue"><li>No upcoming songs</li></ol>
+            <p class="bot-footnote">Max 5 tracks per room · 12 MB per track. Songs are held temporarily on Render and deleted when the host leaves or the service restarts. Mobile playback may require tapping Enable Bot Audio; OS background limits still apply.</p>
+          </section>
           <section class="youtube-section" aria-label="YouTube watch party">
             <div class="device-audio-head"><span>▶ YOUTUBE WATCH PARTY</span><span class="count-badge">HOST SYNC</span></div>
             <p>Watch music videos and videos together. Everyone plays the original video directly from YouTube—no screen or system-audio sharing needed.</p>
