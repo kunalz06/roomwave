@@ -85,13 +85,23 @@
           </section>
           <section class="youtube-section" aria-label="YouTube watch party">
             <div class="device-audio-head"><span>▶ YOUTUBE WATCH PARTY</span><span class="count-badge">HOST SYNC</span></div>
-            <p>Watch music videos and videos together. Everyone plays the original video directly from YouTube—no screen or system-audio sharing needed.</p>
+            <p>Everyone can add YouTube videos or songs to the shared queue. The host chooses playback order; every participant watches the original, visible YouTube player.</p>
             <form id="youtubeForm" class="youtube-form" hidden>
-              <input id="youtubeInput" type="url" inputmode="url" placeholder="Paste a YouTube or YouTube Music video link" aria-label="YouTube video link" autocomplete="off" />
-              <button class="btn btn-primary btn-small" type="submit">Load for everyone</button>
+              <input id="youtubeInput" type="text" inputmode="url" placeholder="Paste a YouTube or YouTube Music link" aria-label="YouTube video link" autocomplete="off" />
+              <button class="btn btn-primary btn-small" type="submit">＋ Add to queue</button>
               <button id="youtubeClear" class="btn btn-ghost btn-small" type="button" hidden>Clear</button>
             </form>
-            <div id="youtubeEmpty" class="youtube-empty">The host hasn't selected a YouTube video yet.</div>
+            <div class="youtube-queue-header"><strong>UP NEXT</strong><span id="youtubeQueueCount">0 / 40 queued</span></div>
+            <div class="youtube-mode-row"><label for="youtubeMode">Next video mode</label>
+              <select id="youtubeMode" aria-label="Next YouTube video mode" disabled>
+                <option value="sequential">Sequential</option>
+                <option value="shuffle">Shuffle</option>
+                <option value="repeat-one">Repeat current</option>
+                <option value="manual">Manual — host chooses next</option>
+              </select>
+            </div>
+            <ol id="youtubeQueueList" class="youtube-queue-list"><li>No videos queued yet.</li></ol>
+            <div id="youtubeEmpty" class="youtube-empty">Add a video to the queue. The host can select one to begin playback.</div>
             <div id="youtubePlayerHolder" class="youtube-player" hidden></div>
             <div id="youtubeActions" class="youtube-actions" hidden>
               <div id="youtubeTitle" class="youtube-video-title">No YouTube video selected</div>
@@ -99,6 +109,7 @@
                 <button id="youtubePlay" class="btn btn-primary btn-small" type="button" hidden>▶ Play for room</button>
                 <button id="youtubePause" class="btn btn-outline btn-small" type="button" hidden>Ⅱ Pause</button>
                 <button id="youtubeSync" class="btn btn-ghost btn-small" type="button" hidden>↻ Sync now</button>
+                <button id="youtubeNext" class="btn btn-outline btn-small" type="button" hidden>⏭ Next video</button>
                 <a id="youtubeSource" href="https://www.youtube.com/" target="_blank" rel="noopener noreferrer" hidden>Open on YouTube ↗</a>
               </div>
             </div>
