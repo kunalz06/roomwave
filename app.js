@@ -748,7 +748,7 @@ const BOT_TYPES = {
 function botPlayer() { return $('botAudio'); }
 function clearBot() {
   state.bot=null;state.botToken='';state.botAudioEnabled=false;
-  state.botReceivedAt=0;state.botUploading=false;
+  state.botReceivedAt=0;state.botUploading=false;state.botPlayPending=false;
   const player=botPlayer();
   player.pause();player.removeAttribute('src');player.load();
   $('botEnable').hidden=true;
@@ -767,7 +767,7 @@ function setBotState(next) {
   state.bot=next && typeof next==='object' ? {...next,current} : null;
   state.botReceivedAt=Date.now();
   if(oldId!==current?.id) {
-    const audio=botPlayer();audio.pause();audio.removeAttribute('src');
+    const audio=botPlayer();audio.pause();state.botPlayPending=false;audio.removeAttribute('src');
     if(current && state.bot) {
       const origin=new URL(window.ROOMWAVE_SIGNALING_URL).origin;
       audio.src=origin+'/bot/tracks/'+current.id;
@@ -814,7 +814,7 @@ function syncBotAudio() {
   if(a.readyState>=1){
     const position=botPosition();
     if(Number.isFinite(a.duration) && position<a.duration &&
-       Math.abs(a.currentTime-position)>2.5){
+       Math.abs(a.currentTime-position)>(document.visibilityState==='hidden'?12:3)){
       try{a.currentTime=position;}catch{}
     }
   }
@@ -827,12 +827,14 @@ function syncBotAudio() {
     $('botEnable').hidden=false;
     return;
   }
-  if(a.paused) a.play().then(()=>{
+  if(a.ended || !a.paused || state.botPlayPending)return;
+  state.botPlayPending=true;
+  a.play().then(()=>{
     refreshAudioSession();$('botEnable').hidden=true;
   }).catch(()=>{
     state.botAudioEnabled=false;$('botEnable').hidden=false;
-    $('botStatus').textContent='Your browser blocked playback. Tap Enable Bot Audio.';
-  });
+    $('botStatus').textContent='Tap Enable sound';
+  }).finally(()=>{state.botPlayPending=false;});
 }
 function botControl(action,position) {
   if(!state.hosting||!state.joined||!state.bot?.current)return;
@@ -1226,6 +1228,19 @@ $('botEnable').addEventListener('click',async()=>{
   catch { state.botAudioEnabled=false;notify('Tap play on the bot audio player to enable sound.'); }
 });
 $('botAudio').addEventListener('loadedmetadata',syncBotAudio);
+$('botAudio').addEventListener('waiting',()=>{
+  if(state.bot?.playing) $('botStatus').textContent='Buffering…';
+});
+$('botAudio').addEventListener('stalled',()=>{
+  if(state.bot?.playing) $('botStatus').textContent='Waiting for audio…';
+});
+$('botAudio').addEventListener('canplay',()=>{
+  if(state.bot?.playing) {
+    renderBot();
+    if(!botPlayer().paused)refreshAudioSession();
+  }
+});
+$('botAudio').addEventListener('timeupdate',refreshAudioSession);
 $('botAudio').addEventListener('play',refreshAudioSession);
 $('botAudio').addEventListener('pause',refreshAudioSession);
 $('youtubeForm').addEventListener('submit', setYouTubeFromForm);
@@ -1286,7 +1301,7 @@ $('musicPlayer').addEventListener('seeked',sendMusic);
 $('musicPlayer').addEventListener('ended',sendMusic);
 $('volume').addEventListener('input',e=>{
   const v=Number(e.target.value)/100;
-  $('remoteMusic').volume=v; $('musicPlayer').volume=v;
+  $('remoteMusic').volume=v; $('musicPlayer').volume=v; $('botAudio').volume=v;
   for (const audio of state.deviceAudioPlayers.values()) audio.volume=v;
 });
 $('chatForm').addEventListener('submit',e=>{
