@@ -22,3 +22,11 @@ export function normalizeYouTubeState(value) {
   const position=typeof value.position==='number' && Number.isFinite(value.position) ? Math.max(0,Math.min(86400,value.position)) : 0;
   return {videoId:value.videoId,position,playing:value.playing===true};
 }
+
+// Estimate the current server-synchronized playback time between WebSocket updates.
+export function expectedYouTubePosition(playback, receivedAt, now = Date.now()) {
+  if (!playback || typeof playback.position !== 'number' || !Number.isFinite(playback.position)) return 0;
+  const base = Math.max(0, Math.min(86400, playback.position));
+  if (!playback.playing || !Number.isFinite(receivedAt)) return base;
+  return Math.min(86400, base + Math.max(0, now - receivedAt) / 1000);
+}
