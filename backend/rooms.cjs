@@ -1,5 +1,6 @@
 'use strict';
 const { createBotManager } = require('./music-bot.cjs');
+const { createYouTubeQueue } = require('./youtube-queue.cjs');
 
 const ROOM_PATH = '/rooms';
 const ROOM_CODE = /^[A-HJ-NP-Z2-9]{6}$/;
@@ -19,11 +20,18 @@ function safeSend(socket, payload) {
 function createRoomHub({ logger = console } = {}) {
   const rooms = new Map();
   const sessions = new Map();
+  const youtubeQueue = createYouTubeQueue();
   const bot = createBotManager({onUpdate(code, state){
     const room=rooms.get(code);if(!room)return;
     for(const p of room.participants.values()) safeSend(p.socket,{type:'bot-state',bot:state});
   }});
 
+  function emitYouTube(code) {
+    const room=rooms.get(code), snapshot=youtubeQueue.snapshot(code);
+    if(!room||!snapshot)return;
+    room.youtube = snapshot.youtube ? {...snapshot.youtube,updatedAt:Date.now()} : null;
+    for(const p of room.participants.values()) safeSend(p.socket,{type:'youtube-state',...snapshot});
+  }
   function roster(room) {
     return [...room.participants.values()].map(p => ({ id: p.id, name: p.name }));
   }
@@ -41,6 +49,7 @@ function createRoomHub({ logger = console } = {}) {
     if (room.hostId === session.id || room.participants.size === 0) {
       rooms.delete(session.code);
       bot.drop(session.code);
+      youtubeQueue.removeRoom(session.code);
       for (const p of room.participants.values()) {
         sessions.delete(p.socket);
         safeSend(p.socket, { type: 'room-closed' });
@@ -72,6 +81,7 @@ function createRoomHub({ logger = console } = {}) {
         room = { hostId: id, participants: new Map(), youtube: null };
         rooms.set(code, room);
         bot.create(code);
+        youtubeQueue.setup(code);
       } else {
         if (!room) { safeSend(socket,{type:'error',reason:'room-not-found'}); return; }
         if (room.participants.size >= ROOM_LIMIT) { safeSend(socket,{type:'error',reason:'room-full'}); return; }
@@ -80,7 +90,7 @@ function createRoomHub({ logger = console } = {}) {
       const participant = { socket, id, name: cleanName(message.name) };
       room.participants.set(id, participant);
       sessions.set(socket, {code, id});
-      safeSend(socket,{type:type === 'create' ? 'created' : 'joined', code, members:roster(room), youtube:room.youtube ? currentYouTube(room.youtube) : null,bot:bot.state(code),...(type==='create'?{botToken:bot.rooms.get(code).token}:{})});
+      safeSend(socket,{type:type === 'create' ? 'created' : 'joined', code, members:roster(room), youtube:youtubeQueue.snapshot(code).youtube, youtubeQueue:youtubeQueue.snapshot(code).queue, youtubeMode:youtubeQueue.snapshot(code).mode,bot:bot.state(code),...(type==='create'?{botToken:bot.rooms.get(code).token}:{})});
       sendRoster(room);
       return;
     }
@@ -95,20 +105,21 @@ function createRoomHub({ logger = console } = {}) {
       if (!body) return;
       const payload={type:'chat', from:session.id, body, ts:Date.now()};
       for (const p of room.participants.values()) if (p.socket !== socket) safeSend(p.socket,payload);
-    } else if (type === 'youtube' && session.id === room.hostId) {
-      const v = message.youtube;
-      if (v === null) {
-        room.youtube = null;
-        for (const p of room.participants.values()) if (p.socket !== socket) safeSend(p.socket,{type:'youtube',youtube:null});
-        return;
-      }
-      if (!v || typeof v !== 'object' || Array.isArray(v)) return;
-      if (v.videoId !== null && (typeof v.videoId !== 'string' || !/^[a-zA-Z0-9_-]{11}$/.test(v.videoId))) return;
-      if (typeof v.position !== 'number' || !Number.isFinite(v.position) || v.position < 0 || v.position > 86400 || typeof v.playing !== 'boolean') return;
-      if (v.videoId === null && (v.playing || v.position !== 0)) return;
-      room.youtube = v.videoId ? { videoId:v.videoId,playing:v.playing,position:v.position,updatedAt:Date.now() } : null;
-      const payload = {type:'youtube',youtube:room.youtube ? currentYouTube(room.youtube) : null};
-      for(const p of room.participants.values()) if(p.socket !== socket) safeSend(p.socket,payload);
+    } else if(type==='youtube-add') {
+      if(youtubeQueue.add(session.code,message.videoId,room.participants.get(session.id)?.name)) emitYouTube(session.code);
+      else safeSend(socket,{type:'youtube-queue-error',message:'Could not add video. Check the link or queue limit.'});
+    } else if(type==='youtube' && session.id===room.hostId) {
+      if(youtubeQueue.setPlayback(session.code,message.youtube)) emitYouTube(session.code);
+    } else if(session.id===room.hostId && type==='youtube-mode') {
+      if(youtubeQueue.setMode(session.code,message.mode)) emitYouTube(session.code);
+    } else if(session.id===room.hostId && (type==='youtube-next'||type==='youtube-ended')) {
+      if(youtubeQueue.next(session.code,type==='youtube-ended')) emitYouTube(session.code);
+    } else if(session.id===room.hostId && type==='youtube-select') {
+      if(youtubeQueue.select(session.code,message.id)) emitYouTube(session.code);
+    } else if(session.id===room.hostId && type==='youtube-remove') {
+      if(youtubeQueue.remove(session.code,message.id)) emitYouTube(session.code);
+    } else if(session.id===room.hostId && type==='youtube-move') {
+      if(youtubeQueue.move(session.code,message.id,message.direction)) emitYouTube(session.code);
     } else if (type === 'music' && session.id === room.hostId) {
       const t = message.track;
       if (!t || typeof t !== 'object' || Array.isArray(t)) return;
@@ -129,7 +140,7 @@ function createRoomHub({ logger = console } = {}) {
     socket.on('close', () => leave(socket));
     socket.on('error', () => leave(socket));
   }
-  return { rooms, sessions, bot, handle, leave, connected };
+  return { rooms, sessions, bot, youtubeQueue, handle, leave, connected };
 }
 
 function attachRooms(server, { allowedOrigins = [], logger = console } = {}) {
