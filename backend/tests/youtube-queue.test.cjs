@@ -64,3 +64,44 @@ test('queue limits and validation reject unsafe content and invalid state',()=>{
   assert.equal(q.setPlayback('BCDEFG',{videoId:a,position:999999,playing:true}),false);
   assert.equal(q.snapshot('BCDEFG').queue.length,MAX_QUEUE);
 });
+
+test('Render DJ advances a known-duration video without any host end event',()=>{
+  let clock=1000;
+  const q=createYouTubeQueue({now:()=>clock});
+  q.setup('BCDEFG');q.add('BCDEFG',a,'Host');q.add('BCDEFG',b,'Guest');
+  assert.equal(q.setDuration('BCDEFG',a,7),true);
+  assert.equal(q.snapshot('BCDEFG').station.trackDuration,7);
+  assert.equal(q.setPlayback('BCDEFG',{videoId:a,playing:true,position:0}),true);
+  clock+=10500;
+  assert.deepEqual(q.tick(),[]);
+  clock+=600;
+  assert.deepEqual(q.tick(),['BCDEFG']);
+  assert.equal(q.snapshot('BCDEFG').youtube.videoId,b);
+  assert.equal(q.snapshot('BCDEFG').youtube.playing,true);
+  assert.equal(q.snapshot('BCDEFG').station.trackDuration,null);
+  assert.equal(q.setPlayback('BCDEFG',{videoId:a,playing:false,position:5}),false);
+  assert.equal(q.snapshot('BCDEFG').youtube.videoId,b);
+  assert.equal(q.setDuration('BCDEFG',a,100),false);
+  assert.equal(q.setDuration('BCDEFG',b,Infinity),false);
+  assert.equal(q.setDuration('BCDEFG',b,0),false);
+  assert.equal(q.setDuration('BCDEFG',b,50000),false);
+});
+test('Render DJ does not advance unknown, paused, or manually held videos',()=>{
+  let clock=0;
+  const q=createYouTubeQueue({now:()=>clock});
+  q.setup('BCDEFG');q.add('BCDEFG',a,'Host');q.add('BCDEFG',b,'Guest');
+  q.setPlayback('BCDEFG',{videoId:a,playing:true,position:0});
+  clock+=30000;
+  assert.deepEqual(q.tick(),[]);
+  q.setDuration('BCDEFG',a,20);
+  q.setPlayback('BCDEFG',{videoId:a,playing:false,position:8});
+  assert.deepEqual(q.tick(),[]);
+  q.setMode('BCDEFG','manual');
+  q.setPlayback('BCDEFG',{videoId:a,playing:true,position:18});
+  clock+=9000;
+  assert.deepEqual(q.tick(),['BCDEFG']);
+  assert.equal(q.snapshot('BCDEFG').youtube.playing,false);
+  assert.equal(q.snapshot('BCDEFG').queue.length,1);
+  clock+=20000;
+  assert.deepEqual(q.tick(),[]);
+});
