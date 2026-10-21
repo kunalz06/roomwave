@@ -82,7 +82,7 @@
             </div>
             <button id="youtubeEnable" class="btn btn-primary btn-small youtube-enable" type="button" hidden>▶ Enable YouTube playback</button>
             <p id="youtubeStatus" class="youtube-status" role="status" aria-live="polite">The host can choose a YouTube song or video.</p>
-            <p class="device-audio-help">Keep the YouTube player visible while playing. On mobile, tap Play if the browser blocks autoplay. Some videos prohibit embedding or are region-restricted. YouTube controls, attribution and ads remain available.</p>
+            <p class="device-audio-help">YouTube ads cannot be removed and its player cannot be used for background audio here. Keep the YouTube player visible. On mobile, tap Play if autoplay is blocked. Some videos disallow embeds or have region restrictions. For ad-free music and compatible lock-screen controls, use Roomwave's local-file player.</p>
           </section>
           <div class="device-audio-section">
             <div class="device-audio-head"><span>♫ TAB / DEVICE AUDIO</span><span id="sharedAudioCount" class="count-badge">0 SHARING</span></div>
@@ -91,6 +91,7 @@
             <p class="device-audio-help">On desktop Chrome or Edge, select a tab and enable <b>Share tab audio</b>, or select system audio if offered. Mobile browsers can listen but generally cannot capture other apps' audio. On mobile, microphone sharing is an ambient-sound fallback, not direct device audio. Share only audio you have permission to broadcast.</p>
             <div id="sharedAudioOutputs" class="shared-audio-outputs" aria-label="Live shared audio streams"></div>
           </div>
+          <p class="background-audio-note"><strong>Ad-free Room Radio:</strong> Play music files you have permission to share. Start playback once to enable available lock-screen and headset controls on supported devices. Your browser or phone may suspend the stream when the app is closed or in the background.</p>
           <div class="music-notice" id="musicNotice">Only the host can choose a local audio file. Nothing is uploaded to our servers.</div>
           <audio id="musicPlayer" preload="metadata"></audio><audio id="remoteMusic" autoplay playsinline></audio>
           <button id="enableAudio" class="audio-unlock" hidden>🔊 Tap to enable shared sound</button>
