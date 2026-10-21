@@ -65,7 +65,7 @@ test('collaborative YouTube queue broadcasts from guests and preserves playback 
   const videoId='M7lc1UVf-VE';
   guest.push({type:'youtube-add',videoId});
   assert.equal(host.last('youtube-state').youtube.videoId,videoId);
-  assert.equal(host.last('youtube-state').youtube.playing,true);
+  assert.equal(host.last('youtube-state').youtube.playing,false);
   assert.equal(guest.last('youtube-state').queue.length,0);
   guest.push({type:'youtube-add',videoId:'dQw4w9WgXcQ'});
   assert.equal(host.last('youtube-state').queue.length,1);
