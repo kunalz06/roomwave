@@ -125,3 +125,26 @@ function participantResume(hub,code,id,resumeToken){
   const s=new Socket();hub.connected(s);s.push({type:'resume',code,peerId:id,resumeToken});
   return s;
 }
+
+test('Render DJ advances a known-duration queue while the host socket is disconnected',()=>{
+  const hub=createRoomHub();
+  const host=participant(hub,'create','BCDEFG','roomwave-host-BCDEFG','Host');
+  const guest=participant(hub,'join','BCDEFG','guest-123','Guest');
+  guest.push({type:'youtube-add',videoId:'M7lc1UVf-VE'});
+  guest.push({type:'youtube-add',videoId:'dQw4w9WgXcQ'});
+  host.push({type:'youtube-duration',videoId:'M7lc1UVf-VE',duration:8});
+  assert.equal(guest.last('youtube-state').station.trackDuration,8);
+  host.push({type:'youtube',youtube:{videoId:'M7lc1UVf-VE',position:7.8,playing:true}});
+  host.close();
+  assert.equal(hub.rooms.size,1);
+  const track=hub.youtubeQueue.rooms.get('BCDEFG').current;
+  track.updatedAt=Date.now()-5000;
+  assert.deepEqual(hub.youtubeQueue.tick(),['BCDEFG']);
+  hub.emitYouTube('BCDEFG');
+  assert.equal(guest.last('youtube-state').youtube.videoId,'dQw4w9WgXcQ');
+  assert.equal(guest.last('youtube-state').station.serverManaged,true);
+  const previous=hub.youtubeQueue.snapshot('BCDEFG');
+  guest.push({type:'youtube-duration',videoId:'dQw4w9WgXcQ',duration:3});
+  assert.equal(hub.youtubeQueue.snapshot('BCDEFG').station.trackDuration,null);
+  assert.equal(hub.youtubeQueue.snapshot('BCDEFG').youtube.videoId,previous.youtube.videoId);
+});
