@@ -58,29 +58,42 @@ test('guest departure updates the host roster and leaves room open', () => {
   assert.equal(hub.rooms.size,1);
 });
 
-test('host shares YouTube playback and late joiner receives authoritative state; guests cannot override', () => {
+test('collaborative YouTube queue broadcasts from guests and preserves playback for late joiners', () => {
   const hub=createRoomHub();
   const host=participant(hub,'create','BCDEFG','roomwave-host-BCDEFG','Host');
   const guest=participant(hub,'join','BCDEFG','guest-123','Guest');
   const videoId='M7lc1UVf-VE';
-  host.push({type:'youtube',youtube:{videoId,playing:true,position:20}});
-  assert.equal(guest.last('youtube').youtube.videoId,videoId);
-  guest.push({type:'youtube',youtube:{videoId:'dQw4w9WgXcQ',playing:false,position:0}});
-  assert.equal(hub.rooms.get('BCDEFG').youtube.videoId,videoId);
+  guest.push({type:'youtube-add',videoId});
+  assert.equal(host.last('youtube-state').youtube.videoId,videoId);
+  assert.equal(host.last('youtube-state').youtube.playing,true);
+  assert.equal(guest.last('youtube-state').queue.length,0);
+  guest.push({type:'youtube-add',videoId:'dQw4w9WgXcQ'});
+  assert.equal(host.last('youtube-state').queue.length,1);
   const late=participant(hub,'join','BCDEFG','guest-456','Late');
   assert.equal(late.last('joined').youtube.videoId,videoId);
-  assert.ok(late.last('joined').youtube.position>=20);
+  assert.equal(late.last('joined').youtubeQueue.length,1);
+  const before=hub.youtubeQueue.snapshot('BCDEFG');
+  guest.push({type:'youtube-next'});
+  guest.push({type:'youtube-mode',mode:'shuffle'});
+  guest.push({type:'youtube',youtube:{videoId:'dQw4w9WgXcQ',position:0,playing:false}});
+  assert.equal(hub.youtubeQueue.snapshot('BCDEFG').youtube.videoId,before.youtube.videoId);
+  assert.equal(hub.youtubeQueue.snapshot('BCDEFG').mode,'sequential');
   host.push({type:'youtube',youtube:{videoId,playing:false,position:25}});
-  assert.equal(guest.last('youtube').youtube.playing,false);
-  host.push({type:'youtube',youtube:{videoId:null,playing:false,position:0}});
-  assert.equal(guest.last('youtube').youtube,null);
-  assert.equal(hub.rooms.get('BCDEFG').youtube,null);
+  assert.equal(guest.last('youtube-state').youtube.playing,false);
+  host.push({type:'youtube-next'});
+  assert.equal(guest.last('youtube-state').youtube.videoId,'dQw4w9WgXcQ');
+  assert.equal(guest.last('youtube-state').queue.length,0);
+  host.push({type:'youtube',youtube:null});
+  assert.equal(guest.last('youtube-state').youtube,null);
+  assert.equal(hub.youtubeQueue.snapshot('BCDEFG').youtube,null);
 });
-test('rejects invalid YouTube IDs and positions, leaving state unchanged', () => {
+test('rejects invalid YouTube state and queue IDs', () => {
   const hub=createRoomHub();
   const host=participant(hub,'create','BCDEFG','roomwave-host-BCDEFG','Host');
   host.push({type:'youtube',youtube:{videoId:'javascript:bad',playing:true,position:0}});
   host.push({type:'youtube',youtube:{videoId:'M7lc1UVf-VE',playing:true,position:Infinity}});
   host.push({type:'youtube',youtube:{videoId:'M7lc1UVf-VE',playing:true,position:-1}});
-  assert.equal(hub.rooms.get('BCDEFG').youtube,null);
+  host.push({type:'youtube-add',videoId:'https://www.youtube.com/watch?v=M7lc1UVf-VE'});
+  assert.equal(hub.youtubeQueue.snapshot('BCDEFG').youtube,null);
+  assert.equal(hub.youtubeQueue.snapshot('BCDEFG').queue.length,0);
 });
