@@ -1,4 +1,5 @@
 'use strict';
+const { createBotManager } = require('./music-bot.cjs');
 
 const ROOM_PATH = '/rooms';
 const ROOM_CODE = /^[A-HJ-NP-Z2-9]{6}$/;
@@ -18,6 +19,10 @@ function safeSend(socket, payload) {
 function createRoomHub({ logger = console } = {}) {
   const rooms = new Map();
   const sessions = new Map();
+  const bot = createBotManager({onUpdate(code, state){
+    const room=rooms.get(code);if(!room)return;
+    for(const p of room.participants.values()) safeSend(p.socket,{type:'bot-state',bot:state});
+  }});
 
   function roster(room) {
     return [...room.participants.values()].map(p => ({ id: p.id, name: p.name }));
@@ -35,6 +40,7 @@ function createRoomHub({ logger = console } = {}) {
     room.participants.delete(session.id);
     if (room.hostId === session.id || room.participants.size === 0) {
       rooms.delete(session.code);
+      bot.drop(session.code);
       for (const p of room.participants.values()) {
         sessions.delete(p.socket);
         safeSend(p.socket, { type: 'room-closed' });
@@ -65,6 +71,7 @@ function createRoomHub({ logger = console } = {}) {
         if (id !== `roomwave-host-${code}`) { safeSend(socket,{type:'error',reason:'invalid-host'}); return; }
         room = { hostId: id, participants: new Map(), youtube: null };
         rooms.set(code, room);
+        bot.create(code);
       } else {
         if (!room) { safeSend(socket,{type:'error',reason:'room-not-found'}); return; }
         if (room.participants.size >= ROOM_LIMIT) { safeSend(socket,{type:'error',reason:'room-full'}); return; }
@@ -73,7 +80,7 @@ function createRoomHub({ logger = console } = {}) {
       const participant = { socket, id, name: cleanName(message.name) };
       room.participants.set(id, participant);
       sessions.set(socket, {code, id});
-      safeSend(socket,{type:type === 'create' ? 'created' : 'joined', code, members:roster(room), youtube:room.youtube ? currentYouTube(room.youtube) : null});
+      safeSend(socket,{type:type === 'create' ? 'created' : 'joined', code, members:roster(room), youtube:room.youtube ? currentYouTube(room.youtube) : null,bot:bot.state(code),...(type==='create'?{botToken:bot.rooms.get(code).token}:{})});
       sendRoster(room);
       return;
     }
@@ -81,7 +88,9 @@ function createRoomHub({ logger = console } = {}) {
     if (!session) return;
     const room = rooms.get(session.code);
     if (!room) return;
-    if (type === 'chat') {
+    if(type==='bot-control' && session.id===room.hostId){
+      bot.control(session.code,message.action,message.position);
+    } else if (type === 'chat') {
       const body = cleanChat(message.body);
       if (!body) return;
       const payload={type:'chat', from:session.id, body, ts:Date.now()};
@@ -120,7 +129,7 @@ function createRoomHub({ logger = console } = {}) {
     socket.on('close', () => leave(socket));
     socket.on('error', () => leave(socket));
   }
-  return { rooms, sessions, handle, leave, connected };
+  return { rooms, sessions, bot, handle, leave, connected };
 }
 
 function attachRooms(server, { allowedOrigins = [], logger = console } = {}) {
@@ -147,7 +156,9 @@ function attachRooms(server, { allowedOrigins = [], logger = console } = {}) {
     }
   },25000);
   heartbeat.unref?.();
-  wss.on('close', () => clearInterval(heartbeat));
+  const botTicker=setInterval(()=>hub.bot.tick(),1000);
+  botTicker.unref?.();
+  wss.on('close', () => {clearInterval(heartbeat);clearInterval(botTicker);});
   return {hub, wss};
 }
 
