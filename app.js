@@ -19,6 +19,7 @@ const state = {
   track: { title: '', duration: 0, position: 0, playing: false, stamped: 0 },
   joinTimeout: null, setupTimeout: null, warmupAbort: null, connectAttempt: 0,
   youtube: null, youtubePlayer: null, youtubeReady: false, youtubeEnabled: false, youtubeGeneration: 0,
+  youtubeQueue: [], youtubeMode: 'sequential',
   bot: null, botToken: '', botReceivedAt: 0, botAudioEnabled: false, botUploading: false,
   countMessages: 0, toastTimeout: null
 };
@@ -323,6 +324,8 @@ function onRoomMessage(data) {
     displayRoom();
     if(state.hosting && typeof data.botToken==='string') state.botToken=data.botToken;
     setBotState(data.bot);
+    state.youtubeQueue = Array.isArray(data.youtubeQueue)?data.youtubeQueue:[];
+    state.youtubeMode = data.youtubeMode || 'sequential';
     setYouTubeState(data.youtube);
   } else if (data.type==='roster') {
     applyRoster(data.members);
@@ -340,6 +343,12 @@ function onRoomMessage(data) {
     renderMusic();
   } else if (data.type==='bot-state' && state.joined) {
     setBotState(data.bot);
+  } else if (data.type==='youtube-state' && state.joined) {
+    state.youtubeQueue = Array.isArray(data.queue) ? data.queue : [];
+    state.youtubeMode = data.mode || 'sequential';
+    setYouTubeState(data.youtube);
+  } else if (data.type==='youtube-queue-error' && state.joined) {
+    notify(String(data.message||'Queue operation failed.').slice(0,150));
   } else if (data.type==='youtube' && !state.hosting && state.joined) {
     setYouTubeState(data.youtube);
   } else if (data.type==='room-closed') {
@@ -387,6 +396,8 @@ function clearYouTube() {
   state.youtubeReady = false;
   state.youtube = null;
   state.youtubeEnabled = false;
+  state.youtubeQueue = [];
+  state.youtubeMode = 'sequential';
   try { previous?.destroy(); } catch {}
   $('youtubePlayerHolder').replaceChildren();
   $('youtubeEnable').hidden = true;
@@ -398,10 +409,58 @@ function youtubeVisible() {
   const height = Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0);
   return rect.height > 0 && height / rect.height >= 0.5;
 }
+
+function renderYouTubeQueue() {
+  const list=$('youtubeQueueList');
+  list.replaceChildren();
+  const queue=Array.isArray(state.youtubeQueue)?state.youtubeQueue:[];
+  $('youtubeQueueCount').textContent=queue.length+' / 40 queued';
+  if(!queue.length){
+    const empty=document.createElement('li'); empty.className='youtube-queue-empty';
+    empty.textContent='No upcoming videos. Anyone in the room can add a link.';
+    list.append(empty);return;
+  }
+  queue.forEach((item,i)=>{
+    if(!item || !/^[A-Za-z0-9_-]{11}$/.test(item.videoId))return;
+    const li=document.createElement('li');li.className='youtube-queue-item';
+    const info=document.createElement('div');info.className='youtube-queue-info';
+    const title=document.createElement('span');title.className='youtube-queue-video';
+    title.textContent=(i+1)+'. '+item.videoId;
+    const added=document.createElement('small');added.textContent='Added by '+String(item.by||'Guest').slice(0,24);
+    info.append(title,added);
+    const link=document.createElement('a');
+    link.href='https://www.youtube.com/watch?v='+item.videoId;
+    link.target='_blank';link.rel='noopener noreferrer';link.textContent='YouTube ↗';
+    li.append(info,link);
+    if(state.hosting && typeof item.id==='string') {
+      const actions=document.createElement('div');actions.className='youtube-queue-actions';
+      for(const [label,action,disabled] of [
+        ['▶','youtube-select',false],
+        ['↑','youtube-move',i===0],
+        ['↓','youtube-move',i===queue.length-1],
+        ['×','youtube-remove',false]
+      ]) {
+        const button=document.createElement('button');
+        button.type='button';button.className='youtube-queue-control';
+        button.textContent=label;button.disabled=disabled;
+        button.title=action==='youtube-select'?'Play this next':action==='youtube-remove'?'Remove':label==='↑'?'Move up':'Move down';
+        button.setAttribute('aria-label',button.title+' '+item.videoId);
+        button.addEventListener('click',()=>broadcast({
+          type:action,id:item.id,...(action==='youtube-move'?{direction:label==='↑'?-1:1}:{})
+        }));
+        actions.append(button);
+      }
+      li.append(actions);
+    }
+    list.append(li);
+  });
+}
+
 function renderYouTube() {
   if (!state.joined) return;
   const selected = Boolean(state.youtube);
-  $('youtubeForm').hidden = !state.hosting;
+  $('youtubeForm').hidden = false;
+  renderYouTubeQueue();
   $('youtubeClear').hidden = !state.hosting || !selected;
   $('youtubePlayerHolder').hidden = !selected;
   $('youtubeEmpty').hidden = selected;
@@ -409,6 +468,9 @@ function renderYouTube() {
   $('youtubePlay').hidden = !state.hosting;
   $('youtubePause').hidden = !state.hosting;
   $('youtubeSync').hidden = !state.hosting;
+  $('youtubeNext').hidden = !state.hosting;
+  $('youtubeMode').disabled = !state.hosting;
+  $('youtubeMode').value = state.youtubeMode;
   $('youtubeTitle').textContent = selected
     ? (state.youtube.playing ? 'Playing together on YouTube' : 'YouTube video is ready')
     : 'No YouTube video selected';
@@ -484,6 +546,9 @@ function mountYouTube() {
           if (generation !== state.youtubeGeneration) return;
           state.youtubeReady = true;
           syncYouTubePlayer();
+          if(state.hosting && state.youtube?.playing && youtubeVisible()) {
+            try {state.youtubePlayer.playVideo();} catch {}
+          }
         },
         onStateChange: (event) => {
           if (generation !== state.youtubeGeneration || !state.youtube) return;
@@ -494,7 +559,11 @@ function mountYouTube() {
             }
             return;
           }
-          if (event.data === YT.PlayerState.PLAYING || event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.ENDED) {
+          if(event.data === YT.PlayerState.ENDED) {
+            broadcast({type:'youtube-ended'});
+            return;
+          }
+          if (event.data === YT.PlayerState.PLAYING || event.data === YT.PlayerState.PAUSED) {
             state.youtube.playing = event.data === YT.PlayerState.PLAYING;
             broadcastYouTube();
           }
@@ -524,7 +593,6 @@ function setYouTubeState(value) {
     state.youtubeEnabled = false;
     $('youtubePlayerHolder').replaceChildren();
   } else if (previousId !== normalized.videoId) {
-    state.youtubeEnabled = false;
     mountYouTube();
   } else if (!state.hosting) {
     syncYouTubePlayer();
@@ -533,14 +601,16 @@ function setYouTubeState(value) {
 }
 function setYouTubeFromForm(event) {
   event.preventDefault();
-  if (!state.hosting || !state.joined) return;
+  if (!state.joined) return;
   const id = parseYouTubeId($('youtubeInput').value);
   if (!id) {
     notify('Paste a YouTube video, Shorts, or music.youtube.com watch link (not a playlist-only link).');
     return;
   }
-  setYouTubeState({videoId:id,position:0,playing:false});
-  broadcastYouTube();
+  if (broadcast({type:'youtube-add',videoId:id})) {
+    $('youtubeInput').value='';
+    notify('Video submitted to the shared YouTube queue.');
+  } else notify('Room connection unavailable. Try again.');
 }
 function hostYouTubeAction(action) {
   if (!state.hosting || !state.youtube || !state.youtubeReady) {
@@ -1052,6 +1122,10 @@ $('botAudio').addEventListener('loadedmetadata',syncBotAudio);
 $('botAudio').addEventListener('play',refreshAudioSession);
 $('botAudio').addEventListener('pause',refreshAudioSession);
 $('youtubeForm').addEventListener('submit', setYouTubeFromForm);
+$('youtubeNext').addEventListener('click',()=>{if(state.hosting)broadcast({type:'youtube-next'});});
+$('youtubeMode').addEventListener('change',e=>{
+  if(state.hosting) broadcast({type:'youtube-mode',mode:e.target.value});
+});
 $('youtubeClear').addEventListener('click',()=>{
   if (!state.hosting || !state.joined) return;
   setYouTubeState(null);
