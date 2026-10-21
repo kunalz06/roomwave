@@ -15,3 +15,20 @@
 .device-audio-section>p.device-audio-help{font-size:10px;color:#9693a8;margin-bottom:0}
 .shared-audio-outputs{height:0;overflow:hidden}
 @media(max-width:590px){.device-audio-section{padding:17px}.device-audio-controls button{width:100%}}
+/* A full-size, unobscured official YouTube player for every participant. */
+.youtube-section{margin:19px 0 4px;padding:18px;border:1px solid var(--border);border-radius:16px;background:rgba(14,15,24,.45)}
+.youtube-section>p{color:var(--muted);font-size:13px;line-height:1.6;margin:10px 0}
+.youtube-form{display:flex;align-items:stretch;gap:9px;flex-wrap:wrap;margin:14px 0}
+.youtube-form input{flex:1 1 250px;min-width:0;border:1px solid var(--border);border-radius:10px;padding:12px 13px;background:var(--panel2);color:var(--ink);font:inherit;font-size:13px}
+.youtube-form input:focus-visible{outline:2px solid var(--lime);outline-offset:2px}
+.youtube-empty{padding:24px 12px;text-align:center;border:1px dashed var(--border);border-radius:12px;color:var(--muted);font-size:13px}
+.youtube-player{position:relative;display:block;width:100%;min-height:200px;aspect-ratio:16/9;margin:14px 0;border-radius:12px;overflow:hidden;background:#080808}
+.youtube-player iframe{display:block;width:100%!important;height:100%!important;min-height:200px;border:0}
+.youtube-player[hidden],.youtube-actions[hidden],.youtube-form[hidden],.youtube-empty[hidden],.youtube-enable[hidden]{display:none!important}
+.youtube-actions{display:flex;flex-direction:column;gap:10px;margin:10px 0}
+.youtube-video-title{font-weight:700;font-size:14px}
+.youtube-buttons{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.youtube-buttons a{color:var(--lime);font-size:12px;text-decoration:none}
+.youtube-enable{margin:8px 0}
+.youtube-status{font-size:12px!important}
+@media(max-width:640px){.youtube-section{padding:12px}.youtube-form button{flex:1 0 auto}.youtube-player{min-height:200px}}
