@@ -154,6 +154,6 @@ You can often keep Roomwave open and hear its **own authorized music bot/local a
 
 ### October 21 queue and PWA refinements
 
-The first submitted YouTube link automatically becomes the currently selected video with playback requested, subject to the visible YouTube iframe and each browser's autoplay rules. Further links form the up-next queue. Playback position now accounts for elapsed time between server messages so periodic synchronization doesn't repeatedly seek guests backward. If YouTube blocks the host's autoplay, the host's room playback state is paused until they start playback manually. Queue entries show YouTube thumbnails.
+The first submitted YouTube link automatically becomes the currently selected video ready to play; the host must press Play to start it, after which subsequent tracks advance according to the selected mode and browser autoplay permissions. Further links form the up-next queue. Playback position now accounts for elapsed time between server messages so periodic synchronization doesn't repeatedly seek guests backward. If YouTube blocks the host's autoplay, the host's room playback state is paused until they start playback manually. Queue entries show YouTube thumbnails.
 
 Android installation includes PNG icons at 192 and 512 px; on iOS, use Add to Home Screen. The service worker caches only app-shell files. Neither installation nor the service worker creates a persistent background media connection after a browser or OS kills the page.
