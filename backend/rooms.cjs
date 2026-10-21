@@ -7,7 +7,7 @@ const ROOM_PATH = '/rooms';
 const ROOM_CODE = /^[A-HJ-NP-Z2-9]{6}$/;
 const PEER_ID = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,95}$/;
 const ROOM_LIMIT = 8;
-const RESUME_GRACE_MS = 90000;
+const RESUME_GRACE_MS = 300000;
 const TOKEN = /^[0-9a-f]{48}$/;
 function validResumeToken(expected, actual){
   if(typeof expected!=='string'||typeof actual!=='string'||!TOKEN.test(actual)) return false;
