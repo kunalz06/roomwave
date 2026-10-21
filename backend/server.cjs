@@ -3,6 +3,7 @@
 const http = require('node:http');
 const { SIGNAL_PATH, parsePort, peerSettings, allowedOrigins } = require('./config.cjs');
 const { attachRooms } = require('./rooms.cjs');
+const { attachBotRoutes } = require('./music-bot.cjs');
 
 function createService({ express, ExpressPeerServer, roomSocket = attachRooms, env = process.env, logger = console }) {
   const app = express();
@@ -23,7 +24,9 @@ function createService({ express, ExpressPeerServer, roomSocket = attachRooms, e
   const peerUpgradeServer = http.createServer(app);
   const peerServer = ExpressPeerServer(peerUpgradeServer, peerSettings(env));
   app.use(SIGNAL_PATH, peerServer);
-  const rooms = roomSocket(server, {allowedOrigins: allowedOrigins(env.ALLOWED_ORIGINS), logger});
+  const origins=allowedOrigins(env.ALLOWED_ORIGINS);
+  const rooms = roomSocket(server, {allowedOrigins: origins, logger});
+  if(rooms.hub?.bot) attachBotRoutes(app, rooms.hub.bot, origins);
   server.on('upgrade', (req, socket, head) => {
     let path;
     try { path = new URL(req.url, 'http://localhost').pathname; }
