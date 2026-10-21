@@ -1,0 +1,19 @@
+{
+  "id": "/",
+  "name": "Roomwave — Rooms, Music & Watch Parties",
+  "short_name": "Roomwave",
+  "description": "Create a Roomwave room to chat, watch YouTube videos together, and listen to shared music.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0d0e18",
+  "theme_color": "#0d0e18",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
