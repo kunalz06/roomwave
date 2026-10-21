@@ -3,6 +3,8 @@ const {randomBytes,randomInt}=require('node:crypto');
 const ID=/^[A-Za-z0-9_-]{11}$/;
 const MODES=new Set(['sequential','shuffle','repeat-one','manual']);
 const MAX_QUEUE=40;
+const MAX_DURATION=12*60*60;
+const NEXT_GRACE_SEC=4;
 const cleanText=v=>String(v||'').replace(/[\x00-\x1f\x7f]/g,' ').trim().slice(0,24);
 function createYouTubeQueue({now=()=>Date.now(),random=n=>randomInt(n)}={}) {
   const rooms=new Map();
@@ -15,7 +17,7 @@ function createYouTubeQueue({now=()=>Date.now(),random=n=>randomInt(n)}={}) {
       const c=r.current;
       y={videoId:c.videoId,position:Math.min(86400,c.position+(c.playing?Math.max(0,(now()-c.updatedAt)/1000):0)),playing:c.playing};
     }
-    return {youtube:y,queue:r.queue.map(({id,videoId,by})=>({id,videoId,by})),mode:r.mode};
+    return {youtube:y,queue:r.queue.map(({id,videoId,by})=>({id,videoId,by})),mode:r.mode,station:{active:Boolean(r.current?.playing),trackDuration:r.current?.duration??null,serverManaged:true}};
   }
   function setPlayback(code,youtube) {
     const r=rooms.get(code);if(!r)return false;
@@ -24,7 +26,11 @@ function createYouTubeQueue({now=()=>Date.now(),random=n=>randomInt(n)}={}) {
         !ID.test(youtube.videoId)||
         typeof youtube.position!=='number'||!Number.isFinite(youtube.position)||youtube.position<0||youtube.position>86400||
         typeof youtube.playing!=='boolean')return false;
-    r.current={videoId:youtube.videoId,position:youtube.position,playing:youtube.playing,updatedAt:now()};
+    // Hosts may control the current track, but stale browser events cannot
+    // replace a server-selected next track with the preceding video.
+    if(r.current && r.current.videoId!==youtube.videoId) return false;
+    const duration=r.current?.duration??null;
+    r.current={videoId:youtube.videoId,position:youtube.position,playing:youtube.playing,updatedAt:now(),duration};
     return true;
   }
   function add(code,videoId,by) {
@@ -36,7 +42,7 @@ function createYouTubeQueue({now=()=>Date.now(),random=n=>randomInt(n)}={}) {
     // Playback still depends on YouTube's visible-player/autoplay permissions.
     if(!r.current){
       const first=r.queue.shift();
-      r.current={videoId:first.videoId,position:0,playing:false,updatedAt:now()};
+      r.current={videoId:first.videoId,position:0,playing:false,updatedAt:now(),duration:null};
     }
     return true;
   }
@@ -45,7 +51,7 @@ function createYouTubeQueue({now=()=>Date.now(),random=n=>randomInt(n)}={}) {
     const r=rooms.get(code);if(!r||typeof id!=='string')return false;
     const index=r.queue.findIndex(e=>e.id===id);if(index<0)return false;
     const item=r.queue.splice(index,1)[0];
-    r.current={videoId:item.videoId,position:0,playing:false,updatedAt:now()};
+    r.current={videoId:item.videoId,position:0,playing:false,updatedAt:now(),duration:null};
     return true;
   }
   function next(code,ended=false){
@@ -65,8 +71,30 @@ function createYouTubeQueue({now=()=>Date.now(),random=n=>randomInt(n)}={}) {
     if(!r.queue.length){r.current=null;return true;}
     const ix=r.mode==='shuffle'?Math.max(0,Math.min(r.queue.length-1,random(r.queue.length))):0;
     const item=r.queue.splice(ix,1)[0];
-    r.current={videoId:item.videoId,position:0,playing:true,updatedAt:now()};
+    r.current={videoId:item.videoId,position:0,playing:true,updatedAt:now(),duration:null};
     return true;
+  }
+  // Duration comes from the host's *visible* official YouTube player. There
+  // is no YouTube audio/video fetching, transcoding, or server-side player.
+  function setDuration(code,videoId,duration){
+    const r=rooms.get(code);
+    if(!r?.current || r.current.videoId!==videoId ||
+       typeof duration!=='number' || !Number.isFinite(duration) ||
+       duration<2 || duration>MAX_DURATION) return false;
+    r.current.duration=duration;
+    return true;
+  }
+  function tick(){
+    const updated=[];
+    for(const [code,room] of rooms){
+      const c=room.current;
+      if(!c?.playing || !Number.isFinite(c.duration))continue;
+      const elapsed=c.position+Math.max(0,(now()-c.updatedAt)/1000);
+      if(elapsed<c.duration+NEXT_GRACE_SEC)continue;
+      next(code,true);
+      updated.push(code);
+    }
+    return updated;
   }
   function remove(code,id){const r=rooms.get(code);if(!r||typeof id!=='string')return false;const i=r.queue.findIndex(e=>e.id===id);if(i<0)return false;r.queue.splice(i,1);return true;}
   function move(code,id,direction){
@@ -76,6 +104,6 @@ function createYouTubeQueue({now=()=>Date.now(),random=n=>randomInt(n)}={}) {
     [r.queue[i],r.queue[j]]=[r.queue[j],r.queue[i]];
     return true;
   }
-  return {setup,removeRoom,snapshot,setPlayback,add,setMode,select,next,remove,move,rooms};
+  return {setup,removeRoom,snapshot,setPlayback,setDuration,tick,add,setMode,select,next,remove,move,rooms};
 }
 module.exports={createYouTubeQueue,MAX_QUEUE};
