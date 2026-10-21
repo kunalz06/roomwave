@@ -36,7 +36,7 @@ function createYouTubeQueue({now=()=>Date.now(),random=n=>randomInt(n)}={}) {
     // Playback still depends on YouTube's visible-player/autoplay permissions.
     if(!r.current){
       const first=r.queue.shift();
-      r.current={videoId:first.videoId,position:0,playing:true,updatedAt:now()};
+      r.current={videoId:first.videoId,position:0,playing:false,updatedAt:now()};
     }
     return true;
   }
