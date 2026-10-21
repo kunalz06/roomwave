@@ -319,6 +319,7 @@ function openRoomSocket(attempt, endpoint) {
   try { socket = new WebSocket(url.href); }
   catch { connectionFailed('Cannot connect to the room service. Please retry.'); return; }
   state.roomSocket = socket;
+  clearTimeout(state.setupTimeout);
   state.setupTimeout=setTimeout(()=>{
     if(state.roomSocket!==socket)return;
     if(state.joined){
