@@ -21,7 +21,8 @@ const state = {
   youtube: null, youtubePlayer: null, youtubeReady: false, youtubeEnabled: false, youtubeGeneration: 0,
   youtubeQueue: [], youtubeMode: 'sequential', youtubeReceivedAt: 0,
   bot: null, botToken: '', botReceivedAt: 0, botAudioEnabled: false, botUploading: false,
-  countMessages: 0, toastTimeout: null
+  resumeToken: '', recovering: false, reconnectTimer: null, reconnectAttempts: 0, connectionOfflineAt: 0,
+  botPlayPending: false, countMessages: 0, toastTimeout: null
 };
 
 let audioSessionController = null;
@@ -88,7 +89,11 @@ function initIdentity() {
   $('displayName').value = state.name;
   try { localStorage.setItem('roomwave:name', state.name); } catch { /* private browsing */ }
 }
-function resetRoom() {
+function resetRoom(intentional = false) {
+  if(intentional) { try{broadcast({type:'leave'});}catch{} }
+  clearTimeout(state.reconnectTimer);
+  state.reconnectTimer=null;state.resumeToken='';state.recovering=false;
+  state.reconnectAttempts=0;state.connectionOfflineAt=0;
   ++state.connectAttempt; // Invalidates any outstanding free-tier wakeup promise.
   state.warmupAbort?.abort();
   state.warmupAbort = null;
@@ -101,6 +106,7 @@ function resetRoom() {
   clearYouTube();
   clearBot();
   clearAudioSession();
+  $('connectionBanner').hidden=true;
   for (const call of state.incomingDeviceAudioCalls.values()) { try { call.close(); } catch {} }
   state.incomingDeviceAudioCalls.clear();
   for (const audio of state.deviceAudioPlayers.values()) { audio.pause(); audio.srcObject = null; audio.remove(); }
@@ -231,12 +237,37 @@ async function enterRoom(isHost, code) {
     }
   });
 }
+function setConnectionBanner(message) {
+  $('connectionBanner').hidden=!message;
+  $('connectionText').textContent=message||'';
+}
+function scheduleReconnect() {
+  if(!state.joined || !state.resumeToken || state.reconnectTimer || !state.peer)return;
+  state.reconnectAttempts++;
+  const delay=Math.min(12000,800*Math.pow(1.8,Math.min(state.reconnectAttempts,7)));
+  state.reconnectTimer=setTimeout(()=>{
+    state.reconnectTimer=null;
+    reconnectRoom();
+  },delay);
+}
+function reconnectRoom(force=false) {
+  if(!state.joined || !state.resumeToken || !state.peer)return;
+  if(state.roomSocket?.readyState===WebSocket.OPEN && !force)return;
+  if(state.roomSocket?.readyState===WebSocket.CONNECTING && !force)return;
+  clearTimeout(state.reconnectTimer);state.reconnectTimer=null;
+  const old=state.roomSocket;state.roomSocket=null;
+  try{old?.close();}catch{}
+  if(state.peer.disconnected){try{state.peer.reconnect();}catch{}}
+  setConnectionBanner('Reconnecting…');
+  openRoomSocket(state.connectAttempt,String(window.ROOMWAVE_SIGNALING_URL||'').trim());
+}
 function displayRoom() {
   if (state.joined) return;
   clearTimeout(state.joinTimeout);
   state.joinTimeout = null;
   setLobbyBusy(false);
   state.joined = true;
+  setConnectionBanner('');
   $('lobby').hidden = true;
   $('room').hidden = false;
   $('roomCodeDisplay').textContent = state.code;
@@ -264,13 +295,21 @@ function openRoomSocket(attempt, endpoint) {
   try { socket = new WebSocket(url.href); }
   catch { connectionFailed('Cannot connect to the room service. Please retry.'); return; }
   state.roomSocket = socket;
-  state.setupTimeout = setTimeout(() => {
-    if (state.roomSocket === socket && !state.joined) connectionFailed('Room server did not respond. Try again.');
-  }, 25000);
+  state.setupTimeout=setTimeout(()=>{
+    if(state.roomSocket!==socket)return;
+    if(state.joined){
+      try{socket.close();}catch{}
+      scheduleReconnect();
+    } else connectionFailed('Room did not respond. Retry joining.');
+  },20000);
   socket.addEventListener('open', () => {
     if (state.roomSocket !== socket || attempt !== state.connectAttempt) return;
-    socket.send(JSON.stringify({type:state.hosting?'create':'join',code:state.code,peerId:myId(),name:state.name}));
-    setLobbyBusy(true, state.hosting?'Creating your room…':'Joining the host’s room…');
+    socket.send(JSON.stringify({
+      type:state.resumeToken?'resume':state.hosting?'create':'join',
+      code:state.code,peerId:myId(),name:state.name,
+      ...(state.resumeToken?{resumeToken:state.resumeToken}:{})
+    }));
+    if(!state.joined)setLobbyBusy(true,'Joining…');
   });
   socket.addEventListener('message', event => {
     if (state.roomSocket !== socket) return;
@@ -278,11 +317,19 @@ function openRoomSocket(attempt, endpoint) {
     try { data = JSON.parse(event.data); } catch { return; }
     onRoomMessage(data);
   });
-  socket.addEventListener('close', () => {
-    if (state.roomSocket === socket) connectionFailed('Room server disconnected. Reopen the room to reconnect.');
+  socket.addEventListener('close',()=>{
+    if(state.roomSocket!==socket)return;
+    clearTimeout(state.setupTimeout);state.setupTimeout=null;
+    if(state.joined && state.resumeToken){
+      state.roomSocket=null;
+      if(!state.connectionOfflineAt)state.connectionOfflineAt=Date.now();
+      setConnectionBanner('Connection lost · Reconnecting…');
+      scheduleReconnect();
+    } else connectionFailed('Could not connect. Try again.');
   });
-  socket.addEventListener('error', () => {
-    if (state.roomSocket === socket && !state.joined) connectionFailed('Room service connection failed. Check your network and retry.');
+  socket.addEventListener('error',()=>{
+    // close event starts recovery; errors alone are not proof that the room ended.
+    if(state.roomSocket===socket && state.joined)setConnectionBanner('Connection unstable');
   });
 }
 function applyRoster(members) {
@@ -316,12 +363,17 @@ function applyRoster(members) {
 }
 function onRoomMessage(data) {
   if (!data || typeof data !== 'object') return;
-  if (data.type==='created' || data.type==='joined') {
-    if (state.joined || data.code!==state.code) return;
+  if (data.type==='created'||data.type==='joined'||data.type==='resumed') {
+    if(data.code!==state.code || (state.joined && data.type!=='resumed'))return;
+    const wasJoined=state.joined;
+    state.resumeToken=typeof data.resumeToken==='string'?data.resumeToken:state.resumeToken;
+    state.reconnectAttempts=0;state.connectionOfflineAt=0;
+    clearTimeout(state.reconnectTimer);state.reconnectTimer=null;
+    setConnectionBanner('');
     applyRoster(data.members);
     clearTimeout(state.setupTimeout);
     state.setupTimeout = null;
-    displayRoom();
+    if(!wasJoined)displayRoom();
     if(state.hosting && typeof data.botToken==='string') state.botToken=data.botToken;
     setBotState(data.bot);
     state.youtubeQueue = Array.isArray(data.youtubeQueue)?data.youtubeQueue:[];
@@ -352,16 +404,17 @@ function onRoomMessage(data) {
   } else if (data.type==='youtube' && !state.hosting && state.joined) {
     setYouTubeState(data.youtube);
   } else if (data.type==='room-closed') {
-    connectionFailed('The host left. This room is now closed.');
+    connectionFailed('This room has ended.');
   } else if (data.type==='error') {
     const messages = {
       'room-not-found':'Room not found. Ask the host for a new invite link.',
       'room-full':'That room is full (maximum 8 people).',
       'room-exists':'That room code is already taken. Create another room.',
-      'duplicate-peer':'You are already connected from another tab. Close it and retry.',
+      'duplicate-peer':'Room is open elsewhere. Close the other tab.',
+      'invalid-resume':'Session expired. Rejoin the room.',
       'invalid-room':'Invalid room code. Try another invite.',
     };
-    connectionFailed(messages[data.reason] || 'Could not join that room. Please retry.');
+    connectionFailed(messages[data.reason] || 'Could not join. Try again.');
   }
 }
 
@@ -1179,7 +1232,15 @@ $('roomCodeInput').addEventListener('keydown',e=>{if(e.key==='Enter')$('joinRoom
 $('displayName').addEventListener('keydown',e=>{if(e.key==='Enter')$('createRoom').click();});
 $('copyInvite').addEventListener('click',copyInvite);
 $('copyInviteSide').addEventListener('click',copyInvite);
-$('leaveRoom').addEventListener('click',()=>resetRoom());
+$('leaveRoom').addEventListener('click',()=>resetRoom(true));
+$('retryConnection').addEventListener('click',()=>reconnectRoom(true));
+window.addEventListener('online',()=>{if(state.joined && state.roomSocket?.readyState!==WebSocket.OPEN)reconnectRoom(true);});
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible'){
+    if(state.joined && state.roomSocket?.readyState!==WebSocket.OPEN)reconnectRoom(true);
+    if(state.bot?.current)syncBotAudio();
+  }
+});
 $('shareScreen').addEventListener('click',shareScreen);
 $('shareDeviceAudio').addEventListener('click', shareDeviceAudio);
 $('shareMicrophone').addEventListener('click', shareMicrophone);
