@@ -928,6 +928,16 @@ function renderPeople() {
     if (isHostId(id)) { const badge=document.createElement('span');badge.className='person-host';badge.textContent='HOST';row.append(badge); }
     list.append(row);
   }
+  // The DJ is a virtual room member that coordinates official YouTube players,
+  // not a hidden server video player or a WebRTC media broadcaster.
+  const dj=document.createElement('div');dj.className='person-row virtual-dj';
+  const icon=document.createElement('span');icon.className='avatar';icon.textContent='♫';
+  const details=document.createElement('div');details.style.minWidth='0';
+  const label=document.createElement('div');label.className='person-name';label.textContent='Roomwave DJ';
+  const role=document.createElement('span');role.className='person-sub';role.textContent='Render queue controller';
+  details.append(label,role);dj.append(icon,details);
+  const mark=document.createElement('span');mark.className='person-host';mark.textContent='BOT';
+  dj.append(mark);list.append(dj);
   $('peopleCount').textContent = `${ordered.length} / ${LIMIT}`;
 }
 function acceptCall(call) {
