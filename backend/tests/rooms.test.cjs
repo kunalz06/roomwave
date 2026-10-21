@@ -53,7 +53,7 @@ test('guest departure updates the host roster and leaves room open', () => {
   const hub=createRoomHub();
   const host=participant(hub,'create','BCDEFG','roomwave-host-BCDEFG','Host');
   const guest=participant(hub,'join','BCDEFG','guest-123','Guest');
-  guest.close();
+  guest.push({type:'leave'});
   assert.deepEqual(host.last('roster').members.map(p=>p.id),['roomwave-host-BCDEFG']);
   assert.equal(hub.rooms.size,1);
 });
