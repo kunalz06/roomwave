@@ -61,6 +61,29 @@
           <div class="section-top"><div><span class="section-icon purple">♫</span><span class="section-label">NOW PLAYING TOGETHER</span></div><span class="count-badge music-pill">♫ LIVE AUDIO</span></div>
           <div class="music-main"><div class="album-cover"><span>♫</span><div class="album-rings"></div></div><div class="track-details"><span class="tiny-label">ROOM RADIO</span><h3 id="trackTitle">Nothing on the decks yet</h3><p id="trackSubtitle">The host picks the music. Everyone hears it live.</p><div id="musicProgress" class="progress"><div id="musicProgressFill"></div></div><div class="track-timing"><span id="musicElapsed">0:00</span><span id="musicDuration">0:00</span></div></div></div>
           <div class="music-bottom"><div class="music-controls"><label id="uploadButton" class="btn btn-outline btn-small upload-label" for="audioFile">＋ Choose a song</label><input id="audioFile" type="file" accept="audio/*" hidden /><button id="playMusic" class="btn btn-primary btn-small" disabled>▶ &nbsp; Play</button><button id="stopMusic" class="btn btn-ghost btn-small" disabled>■ Stop</button></div><div class="volume-control"><span class="volume-icon">◖))</span><input id="volume" aria-label="Music volume" type="range" min="0" max="100" value="80" /></div></div>
+          <section class="youtube-section" aria-label="YouTube watch party">
+            <div class="device-audio-head"><span>▶ YOUTUBE WATCH PARTY</span><span class="count-badge">HOST SYNC</span></div>
+            <p>Watch music videos and videos together. Everyone plays the original video directly from YouTube—no screen or system-audio sharing needed.</p>
+            <form id="youtubeForm" class="youtube-form" hidden>
+              <input id="youtubeInput" type="url" inputmode="url" placeholder="Paste a YouTube or YouTube Music video link" aria-label="YouTube video link" autocomplete="off" />
+              <button class="btn btn-primary btn-small" type="submit">Load for everyone</button>
+              <button id="youtubeClear" class="btn btn-ghost btn-small" type="button" hidden>Clear</button>
+            </form>
+            <div id="youtubeEmpty" class="youtube-empty">The host hasn't selected a YouTube video yet.</div>
+            <div id="youtubePlayerHolder" class="youtube-player" hidden></div>
+            <div id="youtubeActions" class="youtube-actions" hidden>
+              <div id="youtubeTitle" class="youtube-video-title">No YouTube video selected</div>
+              <div class="youtube-buttons">
+                <button id="youtubePlay" class="btn btn-primary btn-small" type="button" hidden>▶ Play for room</button>
+                <button id="youtubePause" class="btn btn-outline btn-small" type="button" hidden>Ⅱ Pause</button>
+                <button id="youtubeSync" class="btn btn-ghost btn-small" type="button" hidden>↻ Sync now</button>
+                <a id="youtubeSource" href="https://www.youtube.com/" target="_blank" rel="noopener noreferrer" hidden>Open on YouTube ↗</a>
+              </div>
+            </div>
+            <button id="youtubeEnable" class="btn btn-primary btn-small youtube-enable" type="button" hidden>▶ Enable YouTube playback</button>
+            <p id="youtubeStatus" class="youtube-status" role="status" aria-live="polite">The host can choose a YouTube song or video.</p>
+            <p class="device-audio-help">Keep the YouTube player visible while playing. On mobile, tap Play if the browser blocks autoplay. Some videos prohibit embedding or are region-restricted. YouTube controls, attribution and ads remain available.</p>
+          </section>
           <div class="device-audio-section">
             <div class="device-audio-head"><span>♫ TAB / DEVICE AUDIO</span><span id="sharedAudioCount" class="count-badge">0 SHARING</span></div>
             <p>Broadcast audio from a selected playing browser tab or a supported desktop audio source to everyone in the room.</p>
