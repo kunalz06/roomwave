@@ -1,4 +1,5 @@
 'use strict';
+const { randomBytes, timingSafeEqual } = require('node:crypto');
 const { createBotManager } = require('./music-bot.cjs');
 const { createYouTubeQueue } = require('./youtube-queue.cjs');
 
@@ -6,6 +7,13 @@ const ROOM_PATH = '/rooms';
 const ROOM_CODE = /^[A-HJ-NP-Z2-9]{6}$/;
 const PEER_ID = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,95}$/;
 const ROOM_LIMIT = 8;
+const RESUME_GRACE_MS = 90000;
+const TOKEN = /^[0-9a-f]{48}$/;
+function validResumeToken(expected, actual){
+  if(typeof expected!=='string'||typeof actual!=='string'||!TOKEN.test(actual)) return false;
+  const a=Buffer.from(expected,'hex'),b=Buffer.from(actual,'hex');
+  return a.length===b.length && timingSafeEqual(a,b);
+}
 
 function cleanName(input) {
   return String(input ?? '').replace(/[\x00-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0,24) || 'Guest';
@@ -39,25 +47,42 @@ function createRoomHub({ logger = console } = {}) {
     const payload = { type: 'roster', members: roster(room) };
     for (const p of room.participants.values()) safeSend(p.socket, payload);
   }
-  function leave(socket) {
-    const session = sessions.get(socket);
-    if (!session) return;
-    sessions.delete(socket);
-    const room = rooms.get(session.code);
-    if (!room) return;
-    room.participants.delete(session.id);
-    if (room.hostId === session.id || room.participants.size === 0) {
-      rooms.delete(session.code);
-      bot.drop(session.code);
-      youtubeQueue.removeRoom(session.code);
-      for (const p of room.participants.values()) {
-        sessions.delete(p.socket);
-        safeSend(p.socket, { type: 'room-closed' });
-        try { p.socket.close(1000, 'Host left'); } catch {}
+  function removeParticipant(code,id){
+    const room=rooms.get(code);
+    const p=room?.participants.get(id);
+    if(!room||!p)return;
+    if(p.timer){clearTimeout(p.timer);p.timer=null;}
+    room.participants.delete(id);
+    if(p.socket){sessions.delete(p.socket);}
+    if(room.hostId===id||room.participants.size===0){
+      rooms.delete(code);
+      bot.drop(code);
+      youtubeQueue.removeRoom(code);
+      for(const other of room.participants.values()){
+        if(other.timer)clearTimeout(other.timer);
+        if(other.socket){
+          sessions.delete(other.socket);
+          safeSend(other.socket,{type:'room-closed'});
+          try{other.socket.close(1000,'Room closed');}catch{}
+        }
       }
-    } else {
-      sendRoster(room);
-    }
+    } else sendRoster(room);
+  }
+  function leave(socket, immediate=false) {
+    const session=sessions.get(socket);
+    if(!session)return;
+    sessions.delete(socket);
+    const p=rooms.get(session.code)?.participants.get(session.id);
+    if(!p||p.socket!==socket)return; // A newer socket may have resumed this participant.
+    p.socket=null;
+    if(immediate){removeParticipant(session.code,session.id);return;}
+    if(p.timer)clearTimeout(p.timer);
+    p.timer=setTimeout(()=>{
+      if(rooms.get(session.code)?.participants.get(session.id)===p && !p.socket)
+        removeParticipant(session.code,session.id);
+    },RESUME_GRACE_MS);
+    p.timer.unref?.();
+    // Keep the roster stable during transient mobile/network disconnects.
   }
   function currentYouTube(state) {
     const elapsed = state.playing ? Math.max(0,(Date.now()-state.updatedAt)/1000) : 0;
@@ -67,7 +92,7 @@ function createRoomHub({ logger = console } = {}) {
   function handle(socket, message) {
     if (!message || typeof message !== 'object' || Array.isArray(message)) return;
     const type = message.type;
-    if (type === 'create' || type === 'join') {
+    if (type === 'create' || type === 'join' || type === 'resume') {
       if (sessions.has(socket)) { safeSend(socket, {type:'error', reason:'already-in-room'}); return; }
       const code = message.code;
       const id = message.peerId;
@@ -75,6 +100,27 @@ function createRoomHub({ logger = console } = {}) {
         safeSend(socket, {type:'error', reason:'invalid-room'}); return;
       }
       let room = rooms.get(code);
+      if(type==='resume') {
+        const participant=room?.participants.get(id);
+        if(!participant || !validResumeToken(participant.resumeToken,message.resumeToken)){
+          safeSend(socket,{type:'error',reason:room?'invalid-resume':'room-not-found'});return;
+        }
+        if(participant.timer){clearTimeout(participant.timer);participant.timer=null;}
+        const oldSocket=participant.socket;
+        if(oldSocket && oldSocket!==socket){
+          sessions.delete(oldSocket);
+          try{oldSocket.close(1000,'Reconnected');}catch{}
+        }
+        participant.socket=socket;
+        sessions.set(socket,{code,id});
+        const youtube=youtubeQueue.snapshot(code);
+        safeSend(socket,{type:'resumed',code,members:roster(room),
+          youtube:youtube.youtube,youtubeQueue:youtube.queue,youtubeMode:youtube.mode,
+          bot:bot.state(code),resumeToken:participant.resumeToken,
+          ...(id===room.hostId?{botToken:bot.rooms.get(code)?.token}:{})});
+        sendRoster(room);
+        return;
+      }
       if (type === 'create') {
         if (room) { safeSend(socket,{type:'error',reason:'room-exists'}); return; }
         if (id !== `roomwave-host-${code}`) { safeSend(socket,{type:'error',reason:'invalid-host'}); return; }
@@ -87,10 +133,10 @@ function createRoomHub({ logger = console } = {}) {
         if (room.participants.size >= ROOM_LIMIT) { safeSend(socket,{type:'error',reason:'room-full'}); return; }
         if (room.participants.has(id) || id === room.hostId) { safeSend(socket,{type:'error',reason:'duplicate-peer'}); return; }
       }
-      const participant = { socket, id, name: cleanName(message.name) };
+      const participant = { socket, id, name: cleanName(message.name), resumeToken:randomBytes(24).toString('hex'), timer:null };
       room.participants.set(id, participant);
       sessions.set(socket, {code, id});
-      safeSend(socket,{type:type === 'create' ? 'created' : 'joined', code, members:roster(room), youtube:youtubeQueue.snapshot(code).youtube, youtubeQueue:youtubeQueue.snapshot(code).queue, youtubeMode:youtubeQueue.snapshot(code).mode,bot:bot.state(code),...(type==='create'?{botToken:bot.rooms.get(code).token}:{})});
+      safeSend(socket,{type:type === 'create' ? 'created' : 'joined', code, members:roster(room), youtube:youtubeQueue.snapshot(code).youtube, youtubeQueue:youtubeQueue.snapshot(code).queue, youtubeMode:youtubeQueue.snapshot(code).mode,bot:bot.state(code),resumeToken:participant.resumeToken,...(type==='create'?{botToken:bot.rooms.get(code).token}:{})});
       sendRoster(room);
       return;
     }
@@ -98,6 +144,7 @@ function createRoomHub({ logger = console } = {}) {
     if (!session) return;
     const room = rooms.get(session.code);
     if (!room) return;
+    if(type==='leave'){leave(socket,true);return;}
     if(type==='bot-control' && session.id===room.hostId){
       bot.control(session.code,message.action,message.position);
     } else if (type === 'chat') {
@@ -173,4 +220,4 @@ function attachRooms(server, { allowedOrigins = [], logger = console } = {}) {
   return {hub, wss};
 }
 
-module.exports={ROOM_PATH, ROOM_LIMIT, createRoomHub, attachRooms};
+module.exports={ROOM_PATH, ROOM_LIMIT, RESUME_GRACE_MS, createRoomHub, attachRooms};
