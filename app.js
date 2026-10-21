@@ -485,6 +485,8 @@ function clearYouTube() {
   state.youtubeQueue = [];
   state.youtubeMode = 'sequential';
   state.youtubeReceivedAt = 0;
+  state.youtubeDurationSentId='';
+  state.youtubeDurationSentSeconds=0;
   try { previous?.destroy(); } catch {}
   $('youtubePlayerHolder').replaceChildren();
   $('youtubeEnable').hidden = true;
@@ -618,6 +620,19 @@ function pauseYouTubeWhenInvisible() {
     }
   } catch {}
 }
+function reportVisibleYouTubeDuration(){
+  if(!state.hosting || !state.joined || !state.youtube || !state.youtubePlayer ||
+     !state.youtubeReady || !youtubeVisible())return;
+  let duration=0;
+  try{duration=state.youtubePlayer.getDuration?.()||0;}catch{}
+  if(!Number.isFinite(duration)||duration<2||duration>43200)return;
+  if(state.youtubeDurationSentId===state.youtube.videoId &&
+     Math.abs((state.youtubeDurationSentSeconds||0)-duration)<1)return;
+  if(broadcast({type:'youtube-duration',videoId:state.youtube.videoId,duration})){
+    state.youtubeDurationSentId=state.youtube.videoId;
+    state.youtubeDurationSentSeconds=duration;
+  }
+}
 function mountYouTube() {
   const video = state.youtube?.videoId;
   if (!video || !state.joined) return;
@@ -640,6 +655,7 @@ function mountYouTube() {
           if (generation !== state.youtubeGeneration) return;
           state.youtubeReady = true;
           syncYouTubePlayer();
+          reportVisibleYouTubeDuration();
           if(state.hosting && state.youtube?.playing && youtubeVisible()) {
             try {state.youtubePlayer.playVideo();} catch {}
           }
@@ -658,6 +674,7 @@ function mountYouTube() {
             return;
           }
           if (event.data === YT.PlayerState.PLAYING || event.data === YT.PlayerState.PAUSED) {
+            if(event.data === YT.PlayerState.PLAYING)reportVisibleYouTubeDuration();
             state.youtube.playing = event.data === YT.PlayerState.PLAYING;
             broadcastYouTube();
           }
@@ -701,6 +718,8 @@ function setYouTubeState(value) {
     state.youtubeEnabled = false;
     $('youtubePlayerHolder').replaceChildren();
   } else if (previousId !== normalized.videoId) {
+    state.youtubeDurationSentId='';
+    state.youtubeDurationSentSeconds=0;
     mountYouTube();
   } else if (!state.hosting) {
     syncYouTubePlayer();
@@ -735,7 +754,7 @@ function hostYouTubeAction(action) {
       state.youtubePlayer.playVideo();
     }
     if (action === 'pause') state.youtubePlayer.pauseVideo();
-    if (action === 'sync') broadcastYouTube();
+    if (action === 'sync') {reportVisibleYouTubeDuration();broadcastYouTube();}
   } catch { notify('Use the YouTube player controls to start or pause.'); }
 }
 
