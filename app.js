@@ -1308,8 +1308,12 @@ $('volume').addEventListener('input',e=>{
 $('chatForm').addEventListener('submit',e=>{
   e.preventDefault(); if(!state.joined)return;
   const body=cleanChat($('chatInput').value); if(!body)return;
-  $('chatInput').value=''; const message={type:'chat',body,ts:Date.now()};
-  addChat(myId(),body,message.ts);broadcast(message);
+  const message={type:'chat',body,ts:Date.now()};
+  if(!broadcast(message)){
+    notify('Reconnecting… Message not sent.');return;
+  }
+  $('chatInput').value='';
+  addChat(myId(),body,message.ts);
 });
 $('enableAudio').addEventListener('click',async()=>{
   const players = [$('remoteMusic'), ...state.deviceAudioPlayers.values()].filter(a => a.srcObject);
