@@ -584,6 +584,12 @@ function mountYouTube() {
 function setYouTubeState(value) {
   const normalized = normalizeYouTubeState(value);
   const previousId = state.youtube?.videoId;
+  // Repeat-one restarts the same video; advance the host player back to zero.
+  if(state.hosting && normalized && previousId===normalized.videoId &&
+     normalized.playing && normalized.position < 2 && youtubePosition() > 4 &&
+     state.youtubePlayer && state.youtubeReady && youtubeVisible()) {
+    try {state.youtubePlayer.seekTo(0,true);state.youtubePlayer.playVideo();} catch {}
+  }
   state.youtube = normalized;
   if (!normalized) {
     state.youtubeGeneration++;
@@ -1209,4 +1215,28 @@ if(isValidRoomCode(queryRoom))$('roomCodeInput').value=queryRoom;
 document.addEventListener('visibilitychange', pauseYouTubeWhenInvisible);
 window.addEventListener('scroll', pauseYouTubeWhenInvisible, { passive: true });
 window.addEventListener('resize', pauseYouTubeWhenInvisible);
+// Installation helps the app stay in the task switcher. It does not bypass OS
+// background throttling or YouTube's rules for keeping the visible player on screen.
+let roomwaveInstallPrompt=null;
+window.addEventListener('beforeinstallprompt',event=>{
+  event.preventDefault();
+  roomwaveInstallPrompt=event;
+  $('installRoomwave').hidden=false;
+});
+window.addEventListener('appinstalled',()=>{
+  roomwaveInstallPrompt=null;
+  $('installRoomwave').hidden=true;
+});
+$('installRoomwave').addEventListener('click',async()=>{
+  if(roomwaveInstallPrompt){
+    const prompt=roomwaveInstallPrompt;roomwaveInstallPrompt=null;
+    try {await prompt.prompt();} catch {}
+  } else {
+    notify('Install Roomwave from your browser menu: Add to Home Screen or Install app. Keep the app open for room connection.');
+  }
+});
+if('serviceWorker' in navigator && window.isSecureContext){
+  window.addEventListener('load',()=>navigator.serviceWorker.register('/service-worker.js').catch(()=>{}));
+}
+
 window.addEventListener('beforeunload',()=>{try{state.peer?.destroy();}catch{}});
