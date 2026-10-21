@@ -19,6 +19,7 @@ const state = {
   track: { title: '', duration: 0, position: 0, playing: false, stamped: 0 },
   joinTimeout: null, setupTimeout: null, warmupAbort: null, connectAttempt: 0,
   youtube: null, youtubePlayer: null, youtubeReady: false, youtubeEnabled: false, youtubeGeneration: 0,
+  bot: null, botToken: '', botReceivedAt: 0, botAudioEnabled: false, botUploading: false,
   countMessages: 0, toastTimeout: null
 };
 
@@ -97,6 +98,7 @@ function resetRoom() {
   stopSharing();
   stopDeviceAudio();
   clearYouTube();
+  clearBot();
   clearAudioSession();
   for (const call of state.incomingDeviceAudioCalls.values()) { try { call.close(); } catch {} }
   state.incomingDeviceAudioCalls.clear();
@@ -250,6 +252,7 @@ function displayRoom() {
   renderMusic();
   renderDeviceAudio();
   renderYouTube();
+  renderBot();
 }
 function openRoomSocket(attempt, endpoint) {
   if (attempt !== state.connectAttempt || !state.peer?.id) return;
@@ -318,6 +321,8 @@ function onRoomMessage(data) {
     clearTimeout(state.setupTimeout);
     state.setupTimeout = null;
     displayRoom();
+    if(state.hosting && typeof data.botToken==='string') state.botToken=data.botToken;
+    setBotState(data.bot);
     setYouTubeState(data.youtube);
   } else if (data.type==='roster') {
     applyRoster(data.members);
@@ -333,6 +338,8 @@ function onRoomMessage(data) {
       refreshAudioSession();
     }
     renderMusic();
+  } else if (data.type==='bot-state' && state.joined) {
+    setBotState(data.bot);
   } else if (data.type==='youtube' && !state.hosting && state.joined) {
     setYouTubeState(data.youtube);
   } else if (data.type==='room-closed') {
@@ -552,6 +559,159 @@ function hostYouTubeAction(action) {
     if (action === 'pause') state.youtubePlayer.pauseVideo();
     if (action === 'sync') broadcastYouTube();
   } catch { notify('Use the YouTube player controls to start or pause.'); }
+}
+
+
+const BOT_MAX_SIZE = 12 * 1024 * 1024;
+const BOT_TYPES = {
+  mp3: 'audio/mpeg', m4a: 'audio/mp4', mp4: 'audio/mp4', ogg:'audio/ogg',
+  opus:'audio/ogg', wav:'audio/wav', webm:'audio/webm',
+  aac:'audio/aac', flac:'audio/flac'
+};
+function botPlayer() { return $('botAudio'); }
+function clearBot() {
+  state.bot=null;state.botToken='';state.botAudioEnabled=false;
+  state.botReceivedAt=0;state.botUploading=false;
+  const player=botPlayer();
+  player.pause();player.removeAttribute('src');player.load();
+  $('botEnable').hidden=true;
+  $('botQueue').replaceChildren();
+}
+function botPosition() {
+  if (!state.bot) return 0;
+  const c=state.bot.current;
+  return c ? Math.max(0, Math.min(c.duration, state.bot.position+
+    (state.bot.playing ? Math.max(0,(Date.now()-state.botReceivedAt)/1000) : 0))) : 0;
+}
+function setBotState(next) {
+  if (!state.joined) return;
+  const oldId=state.bot?.current?.id;
+  const current=next && typeof next==='object' && next.current && /^[a-f0-9]{32}$/.test(next.current.id) ? next.current : null;
+  state.bot=next && typeof next==='object' ? {...next,current} : null;
+  state.botReceivedAt=Date.now();
+  if(oldId!==current?.id) {
+    const audio=botPlayer();audio.pause();audio.removeAttribute('src');
+    if(current && state.bot) {
+      const origin=new URL(window.ROOMWAVE_SIGNALING_URL).origin;
+      audio.src=origin+'/bot/tracks/'+current.id;
+    }
+    audio.load();
+    if (current && navigator.mediaSession) registerAudioSession(audio,current.title,false);
+    else if(!current) clearAudioSession();
+  }
+  renderBot();
+  syncBotAudio();
+}
+function renderBot() {
+  if(!state.joined)return;
+  const b=state.bot;
+  const c=b?.current;
+  $('botControls').hidden=!state.hosting;
+  $('botUploadFile').disabled=!state.hosting||state.botUploading;
+  $('botUploadButton').disabled=!state.hosting||state.botUploading||!state.botToken;
+  $('botUploadButton').textContent=state.botUploading?'Uploading…':'＋ Add to queue';
+  $('botName').textContent=c ? c.title:'Nothing queued yet';
+  $('botStatus').textContent=state.botUploading?'Uploading track to Roomwave Bot…':
+    !c ? 'Add a music file that you are allowed to share.' :
+    b.playing?'♫ Bot is playing for the room':'Bot is paused — host can press Play';
+  $('botPosition').textContent=c ? formatTime(botPosition())+' / '+formatTime(c.duration) : '0:00';
+  $('botPlay').disabled=!c;
+  $('botPause').disabled=!c;
+  $('botSkip').disabled=!c;
+  $('botStop').disabled=!c;
+  $('botEnable').hidden=!c || !b.playing || state.botAudioEnabled;
+  $('botQueue').replaceChildren();
+  const queue=Array.isArray(b?.queue)?b.queue:[];
+  for (const [i,t] of queue.entries()) {
+    const item=document.createElement('li');
+    item.textContent=(i+1)+'. '+String(t.title).slice(0,90)+' · '+formatTime(t.duration);
+    $('botQueue').append(item);
+  }
+  if (!queue.length) {
+    const li=document.createElement('li');li.textContent='No upcoming songs';$('botQueue').append(li);
+  }
+}
+function syncBotAudio() {
+  const b=state.bot,c=b?.current,a=botPlayer();
+  if(!c || !b) return;
+  if(a.readyState>=1){
+    const position=botPosition();
+    if(Number.isFinite(a.duration) && position<a.duration &&
+       Math.abs(a.currentTime-position)>2.5){
+      try{a.currentTime=position;}catch{}
+    }
+  }
+  if(!b.playing){
+    if(!a.paused)a.pause();
+    refreshAudioSession();
+    return;
+  }
+  if(!state.botAudioEnabled) {
+    $('botEnable').hidden=false;
+    return;
+  }
+  if(a.paused) a.play().then(()=>{
+    refreshAudioSession();$('botEnable').hidden=true;
+  }).catch(()=>{
+    state.botAudioEnabled=false;$('botEnable').hidden=false;
+    $('botStatus').textContent='Your browser blocked playback. Tap Enable Bot Audio.';
+  });
+}
+function botControl(action,position) {
+  if(!state.hosting||!state.joined||!state.bot?.current)return;
+  if(action==='play') state.botAudioEnabled=true;
+  broadcast({type:'bot-control',action,position});
+  if(action==='play') botPlayer().play().catch(()=>{$('botEnable').hidden=false;});
+}
+async function botFileDuration(file) {
+  const blobUrl=URL.createObjectURL(file),audio=document.createElement('audio');
+  audio.preload='metadata';
+  try {
+    return await new Promise((resolve,reject)=>{
+      const timeout=setTimeout(()=>reject(new Error('Could not read track duration')),12000);
+      audio.onloadedmetadata=()=>{
+        clearTimeout(timeout);
+        if(!Number.isFinite(audio.duration)||audio.duration<1||audio.duration>7200) reject(new Error('Unsupported audio duration'));
+        else resolve(audio.duration);
+      };
+      audio.onerror=()=>{clearTimeout(timeout);reject(new Error('The browser cannot decode this audio file'));};
+      audio.src=blobUrl;audio.load();
+    });
+  } finally {
+    audio.pause();audio.removeAttribute('src');audio.load();URL.revokeObjectURL(blobUrl);
+  }
+}
+async function uploadBotTrack(event) {
+  event.preventDefault();
+  if(!state.hosting||!state.joined||state.botUploading||!state.botToken)return;
+  const file=$('botUploadFile').files?.[0];
+  if(!file){notify('Choose an MP3, M4A, OGG or WAV audio file first.');return;}
+  if(file.size<128||file.size>BOT_MAX_SIZE){notify('The bot accepts tracks up to 12 MB.');return;}
+  const ext=file.name.split('.').pop()?.toLowerCase();
+  const mime=BOT_TYPES[ext];
+  if(!mime){notify('Choose an MP3, M4A, OGG, WAV, WebM, AAC, or FLAC audio file.');return;}
+  state.botUploading=true;renderBot();
+  try {
+    const duration=await botFileDuration(file);
+    if(!state.joined||!state.hosting||!state.botToken)return;
+    const endpoint=new URL(window.ROOMWAVE_SIGNALING_URL);
+    const url=endpoint.origin+'/bot/upload?code='+encodeURIComponent(state.code);
+    const response=await fetch(url,{method:'POST',headers:{
+      'Content-Type':mime,'X-Room-Bot-Token':state.botToken,
+      'X-Music-Title':encodeURIComponent(file.name.slice(0,90)),
+      'X-Music-Duration':String(duration)
+    },body:file});
+    const result=await response.json();
+    if(!response.ok||result.error)throw new Error(
+      result.error==='queue-full'?'Bot queue is full (5 tracks maximum).':
+      result.error==='size-limit'?'Bot memory limit reached. Skip tracks or try smaller files.':
+      result.error==='unauthorized'?'Your host session expired. Create another room.':
+      result.error||'Upload failed'
+    );
+    $('botUploadFile').value='';
+    notify('♫ Added '+file.name+' to the Roomwave Bot queue.');
+  } catch(err){notify('Music Bot: '+(err?.message||'Upload failed.')); }
+  finally{state.botUploading=false;renderBot();}
 }
 
 function validNumber(n) { return typeof n === 'number' && Number.isFinite(n) && n >= 0 ? Math.min(n,86400) : 0; }
@@ -878,6 +1038,19 @@ async function copyInvite() {
   try{await navigator.clipboard.writeText(url);notify('Invite link copied! Send it to your friends.');}
   catch{try{window.prompt('Copy your invite link:',url);}catch{notify(`Room code: ${state.code}`);}}
 }
+$('botUploadForm').addEventListener('submit',uploadBotTrack);
+$('botPlay').addEventListener('click',()=>botControl('play'));
+$('botPause').addEventListener('click',()=>botControl('pause'));
+$('botSkip').addEventListener('click',()=>botControl('skip'));
+$('botStop').addEventListener('click',()=>botControl('stop'));
+$('botEnable').addEventListener('click',async()=>{
+  state.botAudioEnabled=true;
+  try { await botPlayer().play(); $('botEnable').hidden=true;refreshAudioSession(); }
+  catch { state.botAudioEnabled=false;notify('Tap play on the bot audio player to enable sound.'); }
+});
+$('botAudio').addEventListener('loadedmetadata',syncBotAudio);
+$('botAudio').addEventListener('play',refreshAudioSession);
+$('botAudio').addEventListener('pause',refreshAudioSession);
 $('youtubeForm').addEventListener('submit', setYouTubeFromForm);
 $('youtubeClear').addEventListener('click',()=>{
   if (!state.hosting || !state.joined) return;
@@ -946,6 +1119,7 @@ $('enableAudio').addEventListener('click',async()=>{
 setInterval(()=>{
   if(!state.joined)return;
   renderMusic();
+  if (state.bot?.current){renderBot();syncBotAudio();}
   if (state.hosting && state.youtube?.playing && state.youtubeReady && Date.now() - (state.youtubeLastSync || 0) > 5000) {
     state.youtubeLastSync = Date.now();
     broadcastYouTube();
