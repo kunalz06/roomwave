@@ -44,6 +44,11 @@ function createRoomHub({ logger = console } = {}) {
       sendRoster(room);
     }
   }
+  function currentYouTube(state) {
+    const elapsed = state.playing ? Math.max(0,(Date.now()-state.updatedAt)/1000) : 0;
+    return { videoId: state.videoId, playing: state.playing,
+      position: Math.min(86400, state.position + elapsed) };
+  }
   function handle(socket, message) {
     if (!message || typeof message !== 'object' || Array.isArray(message)) return;
     const type = message.type;
@@ -58,7 +63,7 @@ function createRoomHub({ logger = console } = {}) {
       if (type === 'create') {
         if (room) { safeSend(socket,{type:'error',reason:'room-exists'}); return; }
         if (id !== `roomwave-host-${code}`) { safeSend(socket,{type:'error',reason:'invalid-host'}); return; }
-        room = { hostId: id, participants: new Map() };
+        room = { hostId: id, participants: new Map(), youtube: null };
         rooms.set(code, room);
       } else {
         if (!room) { safeSend(socket,{type:'error',reason:'room-not-found'}); return; }
@@ -68,7 +73,7 @@ function createRoomHub({ logger = console } = {}) {
       const participant = { socket, id, name: cleanName(message.name) };
       room.participants.set(id, participant);
       sessions.set(socket, {code, id});
-      safeSend(socket,{type:type === 'create' ? 'created' : 'joined', code, members:roster(room)});
+      safeSend(socket,{type:type === 'create' ? 'created' : 'joined', code, members:roster(room), youtube:room.youtube ? currentYouTube(room.youtube) : null});
       sendRoster(room);
       return;
     }
@@ -81,6 +86,15 @@ function createRoomHub({ logger = console } = {}) {
       if (!body) return;
       const payload={type:'chat', from:session.id, body, ts:Date.now()};
       for (const p of room.participants.values()) if (p.socket !== socket) safeSend(p.socket,payload);
+    } else if (type === 'youtube' && session.id === room.hostId) {
+      const v = message.youtube;
+      if (!v || typeof v !== 'object' || Array.isArray(v)) return;
+      if (v.videoId !== null && (typeof v.videoId !== 'string' || !/^[a-zA-Z0-9_-]{11}$/.test(v.videoId))) return;
+      if (typeof v.position !== 'number' || !Number.isFinite(v.position) || v.position < 0 || v.position > 86400 || typeof v.playing !== 'boolean') return;
+      if (v.videoId === null && (v.playing || v.position !== 0)) return;
+      room.youtube = v.videoId ? { videoId:v.videoId,playing:v.playing,position:v.position,updatedAt:Date.now() } : null;
+      const payload = {type:'youtube',youtube:room.youtube ? currentYouTube(room.youtube) : null};
+      for(const p of room.participants.values()) if(p.socket !== socket) safeSend(p.socket,payload);
     } else if (type === 'music' && session.id === room.hostId) {
       const t = message.track;
       if (!t || typeof t !== 'object' || Array.isArray(t)) return;
