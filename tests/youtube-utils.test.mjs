@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parseYouTubeId,normalizeYouTubeState} from '../youtube-utils.mjs';
+import {parseYouTubeId,normalizeYouTubeState,expectedYouTubePosition} from '../youtube-utils.mjs';
 const id='M7lc1UVf-VE';
 test('parses normal, mobile, Music, short and live YouTube video URLs',()=>{
   for(const url of [
@@ -29,4 +29,14 @@ test('rejects bad room video ids and bounds playback position',()=>{
   assert.equal(normalizeYouTubeState({videoId:'<script>',position:0,playing:true}),null);
   assert.deepEqual(normalizeYouTubeState({videoId:id,position:90000,playing:1}),{videoId:id,position:86400,playing:false});
   assert.deepEqual(normalizeYouTubeState({videoId:id,position:13.5,playing:true}),{videoId:id,position:13.5,playing:true});
+});
+
+test('synchronized playback advances between host updates instead of rewinding guests',()=>{
+  const paused={videoId:id,position:30,playing:false};
+  const playing={videoId:id,position:30,playing:true};
+  assert.equal(expectedYouTubePosition(paused,1000,6000),30);
+  assert.equal(expectedYouTubePosition(playing,1000,6000),35);
+  assert.equal(expectedYouTubePosition(playing,6000,1000),30);
+  assert.equal(expectedYouTubePosition({position:86399,playing:true},1000,6000),86400);
+  assert.equal(expectedYouTubePosition(null,1000,6000),0);
 });
