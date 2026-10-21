@@ -1,6 +1,6 @@
 // Minimal app shell: improves installability, not a persistent background media service.
-const CACHE='roomwave-shell-v3';
-const SHELL=['/','/index.html','/styles.css','/app.js','/room-utils.mjs','/media-utils.mjs','/youtube-utils.mjs','/media-session.mjs','/favicon.svg','/manifest.webmanifest'];
+const CACHE='roomwave-shell-v4';
+const SHELL=['/','/index.html','/styles.css','/app.js','/room-utils.mjs','/media-utils.mjs','/youtube-utils.mjs','/media-session.mjs','/favicon.svg','/icons/icon-192.png','/icons/icon-512.png','/manifest.webmanifest'];
 self.addEventListener('install',event=>{
   event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL)).then(()=>self.skipWaiting()));
 });
