@@ -442,6 +442,19 @@ function syncYouTubePlayer() {
     }
   } catch {}
 }
+// YouTube permits playback only in its visible embedded player.
+function pauseYouTubeWhenInvisible() {
+  if (!state.youtubePlayer || !state.youtubeReady || youtubeVisible()) return;
+  try {
+    if (state.youtubePlayer.getPlayerState?.() === window.YT?.PlayerState?.PLAYING) {
+      state.youtubePlayer.pauseVideo();
+      if (!state.hosting) {
+        state.youtubeEnabled = false;
+        $('youtubeEnable').hidden = false;
+      }
+    }
+  } catch {}
+}
 function mountYouTube() {
   const video = state.youtube?.videoId;
   if (!video || !state.joined) return;
@@ -528,7 +541,14 @@ function hostYouTubeAction(action) {
     return;
   }
   try {
-    if (action === 'play') state.youtubePlayer.playVideo();
+    if (action === 'play') {
+      if (!youtubeVisible()) {
+        $('youtubePlayerHolder').scrollIntoView({behavior:'smooth',block:'center'});
+        notify('YouTube playback requires its video to remain visible.');
+        return;
+      }
+      state.youtubePlayer.playVideo();
+    }
     if (action === 'pause') state.youtubePlayer.pauseVideo();
     if (action === 'sync') broadcastYouTube();
   } catch { notify('Use the YouTube player controls to start or pause.'); }
@@ -938,4 +958,7 @@ setInterval(()=>{
 try{$('displayName').value=localStorage.getItem('roomwave:name')||'';}catch{}
 const queryRoom=normalizeRoomCode(new URLSearchParams(location.search).get('room'));
 if(isValidRoomCode(queryRoom))$('roomCodeInput').value=queryRoom;
+document.addEventListener('visibilitychange', pauseYouTubeWhenInvisible);
+window.addEventListener('scroll', pauseYouTubeWhenInvisible, { passive: true });
+window.addEventListener('resize', pauseYouTubeWhenInvisible);
 window.addEventListener('beforeunload',()=>{try{state.peer?.destroy();}catch{}});
